@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>子代理会话 · Subagent</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/settings.css"><script src="/app.js" type="module"></script>
+</head>
+<body>
+<svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.3 4.3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M15 8V4H4v11h4"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="m9 3 9 9-3 1-2 5-3-3-6 6m6-6-4-4 5-2 1-3Z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1L21 7l-5-5L4 14Z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m6 9 4 3-4 3m7 0h5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 4v16m-6-6 6 6 6-6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 8a8 8 0 1 0 .1 8M20 3v6h-6"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12c3-8 6 8 9 0s6 8 9 0M3 7c3-8 6 8 9 0s6 8 9 0"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m10 3-1 3-3 1-3-1-1 4 2 2-1 3 3 3 3-1 2 3 4-1 1-3 3-1-1-4-3-1-1-3Z"/></symbol></defs></svg>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar" aria-label="会话导航">
+    <div class="brand"><span class="brand-mark"><svg><use href="#i-wave"/></svg></span><span>Subagent<span class="brand-caption">Model workspace</span></span><span class="local-label">本地</span></div>
+    <div class="search-box"><svg><use href="#i-search"/></svg><input id="search" type="search" placeholder="搜索会话" aria-label="搜索会话"><kbd>Ctrl K</kbd></div>
+    <div class="scope-nav"><button id="all-filter" class="scope-button selected"><svg><use href="#i-clock"/></svg><span>全部会话</span><span class="count" id="total-count">—</span></button><button id="running-filter" class="scope-button"><span class="status-dot running"></span><span>正在进行</span><span class="count" id="running-count">0</span></button></div>
+    <div class="sidebar-scroll" id="navigation"><div class="sidebar-loading">正在同步会话…</div></div>
+    <button id="models-nav" class="settings-nav"><svg><use href="#i-settings"/></svg><span>模型与连接</span></button>
+    <div class="sidebar-footer"><button id="theme-toggle" class="icon-button" title="切换明暗外观" aria-label="切换明暗外观"><svg><use href="#i-sun"/></svg></button><span><span class="connection-dot" id="connection-dot"></span><span id="connection-label">本机记录已连接</span></span><button id="refresh-button" class="icon-button" title="刷新会话" aria-label="刷新会话"><svg><use href="#i-refresh"/></svg></button></div>
+  </aside>
+  <button class="sidebar-backdrop" id="sidebar-backdrop" aria-label="关闭侧栏"></button>
+  <main class="main">
+    <header class="topbar"><button id="sidebar-toggle" class="icon-button" title="切换侧栏" aria-label="切换侧栏"><svg><use href="#i-panel"/></svg></button><div class="breadcrumb"><svg><use href="#i-folder"/></svg><span id="project-label">子代理会话</span><span class="breadcrumb-divider">/</span><span id="breadcrumb-title">会话记录</span></div><div class="top-actions" id="top-actions" hidden><button id="pin-button" class="icon-button" title="置顶会话" aria-label="置顶会话"><svg><use href="#i-pin"/></svg></button><a id="export-button" class="icon-button" title="导出会话" aria-label="导出会话"><svg><use href="#i-download"/></svg></a><button id="info-button" class="icon-button" title="会话信息" aria-label="会话信息"><svg><use href="#i-info"/></svg></button><button id="rename-button" class="icon-button" title="重命名会话" aria-label="重命名会话"><svg><use href="#i-edit"/></svg></button></div></header>
+    <div id="error-banner" class="error-banner" role="status" hidden></div>
+    <section id="settings-page" class="settings-page" aria-label="模型与连接" hidden><div class="settings-content">
+      <div class="settings-heading"><div><div class="settings-eyebrow">MODEL CONNECTIONS</div><h1>模型与连接</h1><p>接入本地模型、API 服务或模型路由，选择适合任务的模型。</p></div><button id="new-connection" class="settings-add-button">＋ 添加连接</button></div>
+      <div id="settings-load-error" class="settings-load-error" role="status" hidden></div>
+      <div class="default-model-banner"><span class="default-model-icon"><svg><use href="#i-wave"/></svg></span><div class="default-model-text"><small>新任务的默认模型</small><strong id="settings-default-name">正在读取…</strong><code id="settings-default-model"></code></div><div class="default-model-note">设置会即时用于新任务。<br>运行中任务和续聊沿用原连接。</div></div>
+      <div class="settings-grid"><aside><div class="connections-heading"><span>已保存的连接</span><small id="connection-count"></small></div><div id="connections-list" class="connections-list"></div></aside>
+      <section class="connection-editor"><h2 id="connection-editor-title">添加模型连接</h2><p id="connection-editor-hint" class="connection-editor-intro">保存后即可让子代理使用此连接。</p>
+      <form id="connection-form">
+        <div class="settings-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="80" required placeholder="例如：我的本地 Qwen / 公司模型路由"></div>
+        <div class="connection-form-grid"><div class="settings-field"><label for="connection-kind">接入方式</label><select id="connection-kind"><option value="local">本地部署</option><option value="api" selected>直连 API</option><option value="router">代理路由</option><option value="profile" disabled>现有 Codex 配置</option></select></div><div class="settings-field"><label for="connection-preset">快速填写</label><select id="connection-preset"><option value="custom">自定义</option><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option><option value="vllm">vLLM</option><option value="responses">Responses API</option><option value="router">模型路由</option></select></div></div>
+        <div id="profile-fields" class="profile-box" hidden>沿用 Codex 配置：<code id="profile-label"></code><br>这里可以调整名称和模型列表；新增接入无需编辑 Codex 配置文件。</div>
+        <div id="endpoint-fields">
+          <div class="settings-field"><label for="connection-protocol">接口协议</label><select id="connection-protocol"><option value="responses">Responses API</option><option value="chat_completions">Chat Completions（本机适配）</option></select><p>支持 OpenAI 兼容接口。模型还需支持工具调用，才能执行代理任务。</p></div>
+          <div class="settings-field"><label for="connection-base-url">API 根地址</label><input id="connection-base-url" type="url" placeholder="http://127.0.0.1:11434/v1" autocomplete="off"><p>填写 API 根地址；无需追加 /responses 或 /chat/completions。</p></div>
+          <div class="connection-form-grid"><div class="settings-field"><label for="connection-auth">认证方式</label><select id="connection-auth"><option value="none">无需认证</option><option value="stored">保存 API Key（本机加密）</option><option value="env">从环境变量读取</option></select></div><div class="settings-field"><label for="connection-auth-header">认证请求头</label><input id="connection-auth-header" value="Authorization" placeholder="Authorization"><p>Authorization 自动使用 Bearer；也支持 X-API-Key。</p></div></div>
+          <div id="stored-auth-field" class="settings-field" hidden><label for="connection-api-key">API Key</label><div class="key-row"><input id="connection-api-key" type="password" autocomplete="new-password" maxlength="8192" placeholder="输入此服务的 API Key"><label class="settings-checkbox"><input id="show-api-key" type="checkbox">显示</label></div><p>使用当前 Windows 用户加密保存。保存后不回显，也不写入会话记录。</p></div>
+          <div id="env-auth-field" class="settings-field" hidden><label for="connection-env-var">环境变量名称</label><input id="connection-env-var" placeholder="MY_MODEL_API_KEY" autocomplete="off"><p>填写名称，勿填写密钥内容。环境变量需对本地服务进程可见。</p></div>
+        </div>
+        <div class="settings-field"><div class="field-heading"><label for="connection-models">可用模型 ID</label><button id="discover-models" type="button" class="text-button">获取模型列表</button></div><textarea id="connection-models" required rows="4" placeholder="每行一个模型 ID，例如：&#10;qwen3-coder:30b&#10;deepseek-chat"></textarea><p>填写服务实际识别的模型 ID 或路由别名；获取列表不是必需步骤。</p></div>
+        <div id="discovered-models-wrap" class="discovered-models" hidden><label for="discovered-model-input">选择要添加的模型</label><div class="add-model-row"><input id="discovered-model-input" list="discovered-model-list" placeholder="搜索或选择模型 ID"><datalist id="discovered-model-list"></datalist><button id="add-discovered-model" type="button">添加</button></div></div>
+        <div class="settings-field"><label for="connection-default-model">此连接的默认模型</label><select id="connection-default-model" required></select></div>
+        <details id="connection-advanced" class="connection-advanced"><summary>高级设置</summary><div class="connection-form-grid"><div class="settings-field"><label for="connection-context-window">上下文窗口（token）</label><input id="connection-context-window" type="number" min="2048" max="4000000" placeholder="自动"><p>本地模型可按实际部署容量设置。</p></div><div class="settings-field"><label for="connection-reasoning">推理强度</label><select id="connection-reasoning"><option value="">自动</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><p>是否生效取决于模型与接口支持。</p></div></div></details>
+        <div class="settings-field"><label class="settings-checkbox"><input id="connection-enabled" type="checkbox" checked>启用此连接</label></div>
+        <div id="connection-test-result" class="connection-test-result" role="status" hidden></div>
+        <div class="connection-form-actions"><button id="remove-connection" type="button" class="remove-connection" hidden>移除连接</button><button id="save-test-connection" type="button" class="secondary-button">保存并测试</button><button id="save-connection" type="submit" class="primary-button">保存连接</button></div><p id="connection-test-hint" class="settings-form-note">连接测试会发送一条小型模型请求，可能计入该服务的用量。</p>
+      </form></section></div>
+    </div></section>
+    <section class="conversation-scroll" id="conversation-scroll" aria-label="会话历史">
+      <div class="welcome" id="welcome"><div class="welcome-mark"><svg><use href="#i-wave"/></svg></div><p class="eyebrow">YOUR AGENTS, IN VIEW</p><h1>每一步，都有记录。</h1><p>从左侧打开一条 子代理会话，<br>查看任务、回复与工具执行过程。</p><div class="welcome-note"><span class="connection-dot"></span>自动同步 Codex 调用的子代理会话</div></div>
+      <div class="conversation" id="conversation" hidden><div class="conversation-heading"><div class="heading-kicker"><span class="small-wave"><svg><use href="#i-wave"/></svg></span> SUBAGENT <span class="heading-source" id="source-label"></span></div><h1 id="session-title"></h1><div class="session-meta"><span class="model-chip" id="model-label"></span><span id="status-label" class="state-chip"></span><span class="meta-divider"></span><span id="created-label"></span><span class="meta-divider"></span><span id="turns-label"></span></div></div><button id="load-earlier" class="load-earlier" hidden>加载更早的记录</button><div id="transcript" class="transcript"></div><div id="session-ending" class="session-ending"></div></div>
+    </section>
+    <footer class="conversation-footer"><div><span class="connection-dot" id="sync-dot"></span><span id="sync-label">会话记录保存在本机</span></div><button id="auto-refresh" class="auto-refresh active" aria-pressed="true"><span class="toggle-track"><span></span></span>自动刷新</button></footer>
+    <button id="jump-bottom" class="jump-bottom icon-button" title="跳到最新记录" aria-label="跳到最新记录" hidden><svg><use href="#i-arrow"/></svg></button>
+  </main>
+</div>
+<dialog id="rename-dialog" class="dialog"><form id="rename-form"><div class="dialog-title"><h2>重命名会话</h2><button type="button" class="icon-button" data-close-dialog aria-label="关闭"><svg><use href="#i-x"/></svg></button></div><label for="rename-input">会话名称</label><input id="rename-input" maxlength="120" required autocomplete="off"><p class="dialog-hint">仅更新页面中的名称，原始会话记录保持原样。</p><div class="dialog-actions"><button type="button" class="secondary-button" data-close-dialog>取消</button><button type="submit" class="primary-button">保存名称</button></div></form></dialog>
+<dialog id="info-dialog" class="dialog info-dialog"><div class="dialog-title"><h2>会话信息</h2><button type="button" class="icon-button" data-close-dialog aria-label="关闭"><svg><use href="#i-x"/></svg></button></div><div id="info-content"></div></dialog>
+<dialog id="delete-connection-dialog" class="dialog"><div class="dialog-title"><h2>移除模型连接</h2></div><p class="delete-connection-note">移除此连接及其保存的凭据。已保存的会话记录仍可查看，使用此连接的后续任务需要重新配置。</p><div class="dialog-actions"><button type="button" class="secondary-button" data-close-dialog>取消</button><button id="confirm-remove-connection" type="button" class="primary-button">移除连接</button></div></dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+</body></html>

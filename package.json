@@ -1,0 +1,22 @@
+{
+  "name": "codex-exo-subagent-mcp",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Configurable Codex subagent MCP with a local session workspace and model gateway",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "viewer": "node open-viewer.mjs",
+    "settings": "node open-viewer.mjs --settings",
+    "test": "node --test --test-timeout=30000 tests/runtime.test.mjs tests/history.test.mjs tests/models.test.mjs",
+    "test:cli": "node tests/e2e-configured-cli.mjs",
+    "test:live": "node tests/smoke-real.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CandyRGB/codex-exo-subagent-mcp.git"
+  }
+}

@@ -1,0 +1,23 @@
+# Local conversations, model settings, credentials and service state
+/state/
+/backups/
+**/credentials.json
+**/gateway.token
+**/auth.json
+
+# Generated tests and local working artifacts
+/.test-runs/
+/work/
+/outputs/
+*-hashes-before.json
+*.log
+*.tmp
+
+# Local dependencies and environment
+/node_modules/
+.env
+.env.*
+!.env.example
+.npmrc
+.DS_Store
+Thumbs.db

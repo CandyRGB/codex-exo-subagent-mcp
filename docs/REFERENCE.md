@@ -1,0 +1,112 @@
+# codex-subagent v4 — configurable model workspace
+
+Run independent Codex CLI agents through configured local models, API services, model routers or an existing Codex profile. The current `workbuddy` profile and `deepseek-v4.1-flash` model are retained as the initial connection. The default official Codex model and authentication configuration are not changed.
+
+Requires Node.js 24+ and a Codex CLI supporting `exec --json` and `exec resume`. No npm packages are required. Keep all adjacent `.mjs` modules and the `web/` assets together.
+
+## Local session page
+
+Open `http://127.0.0.1:43187`. The page groups conversations by working directory under Projects and shows recent sessions. Select a conversation to read user instructions, agent replies, commands and tool outputs. It supports search, automatic refresh, earlier-message loading, pinning, display-title changes and JSON export. Display metadata does not alter the original Codex logs.
+
+## Model settings
+
+Open `http://127.0.0.1:43187/#/settings/models`, or choose **模型与连接** in the sidebar. Add a local deployment, direct API or router; select Responses API or OpenAI-compatible Chat Completions; enter the API base URL, authentication, model IDs and a default model. Ollama, LM Studio and vLLM quick-fill options are provided. The service must expose the selected compatible API, and the model must support function/tool calling for agent work. Native Anthropic Messages and other protocols require a compatible external gateway.
+
+Model discovery is optional: fetch `/models` and add only the models you want, or enter model IDs manually. **Save and test** sends a small inference request and verifies stream completion and function calling; that request can count toward the upstream provider's usage. Existing-profile checks do not make an inference request.
+
+Authentication options are no auth, an environment variable visible to the local service, or a saved API key. Saved keys use Windows DPAPI CurrentUser encryption in `state/config/credentials.json`; they are never returned by the configuration API. Non-Windows installations should use environment variables. Keys and configuration are not included in source packages. Change the authentication header for providers that require `X-API-Key` instead of `Authorization: Bearer ...`.
+
+Settings live in `state/config/models.json`. The MCP reloads them for each new task, so default-model changes do not require restarting an up-to-date MCP. Reconnect once after upgrading from v3 to load the new tool schema. Running tasks and resumed sessions keep their original connection. Changing a connection's endpoint/protocol/authentication mode makes an existing route fingerprint invalid; create a new task or restore the original route. Rotating a key for the same endpoint does not require changing the route.
+
+Endpoint-backed tasks connect through the authenticated local HTTP model gateway. Responses requests are proxied as SSE; Chat Completions requests are translated locally, including message history, function/custom tools, streaming output and usage. The child CLI receives only a local gateway token; upstream API keys remain in the local service. The gateway is therefore needed while endpoint-backed tasks run. Closing the browser does not stop the gateway. Native-profile tasks keep using their configured provider directly.
+
+The MCP starts the local viewer in a separate hidden Node process. The page remains available when a single MCP connection closes. After a system restart, the next MCP startup launches it again. You can also run `node open-viewer.mjs` to start it and open the default browser, or add `--no-open` to print the URL without opening a browser. Only loopback is supported.
+
+The viewer displays only sessions explicitly linked to this MCP's bridge job registry. It does not import legacy sessions or discover conversations by provider/profile. Cached summaries and display metadata outside the registry are removed. Native logs are read only for registered session IDs. Both JSONL and Zstandard-compressed native logs are supported. System/developer context and encrypted reasoning records are omitted from the displayed transcript.
+
+Native Codex logs are the primary source. New MCP tasks also save visible user/assistant/tool records as `history.jsonl`, so they can be viewed when the native rollout is unavailable. These local records are not sent back to the parent model. Sidebar indexing retains only summaries. Tool-output previews are capped at 64,000 characters, with a full-output download; JSON exports include complete outputs.
+
+Viewer settings: `CODEX_SUBAGENT_VIEWER_PORT` (default `43187`), `CODEX_SUBAGENT_VIEWER_ENABLED=false` (disable automatic startup for that MCP), and `CODEX_HOME` (Codex session location). Viewer metadata and its summary cache live under `state/viewer/`. The current page is a history viewer; starting tasks and sending follow-up prompts continue through Codex/MCP.
+
+## One MCP tool
+
+`codex_subagent` accepts an `action`. Existing calls containing only `prompt`, `cwd`, `model`, `profile`, `sandbox`, and/or `timeout_sec` still run synchronously. Responses are now a compact JSON object inside the MCP text content, rather than an unbounded plain final message.
+
+| Action | Required inputs | Behavior |
+| --- | --- | --- |
+| `run` (default) | `prompt` | Wait until the agent finishes. Prefer `start` for long tasks to avoid MCP request timeouts. |
+| `start` | `prompt` | Start a background task and return its `job_id`. |
+| `status` | `job_id` | Return state and progress without repeating the final reply. |
+| `wait` | `job_id` | Wait up to `wait_sec` (default 25, maximum 30); return a bounded final reply if finished. A wait timeout does not cancel execution. |
+| `cancel` | `job_id` | Stop the CLI process tree and report its actual terminal state. Does not undo edits the agent has already made. |
+| `resume` | `job_id`, `prompt` | Start a new background turn in the recorded Codex session. Keeps the original model, profile, working directory and sandbox. Returns a new `job_id`. |
+| `result` | `job_id` | Read a page of the saved final reply. Use `offset=next_offset` for the next page. |
+| `list` | none | List recent tasks; `limit` defaults to 10 and has a maximum of 50. |
+| `viewer` | none | Return the local history page URL. Task replies also include a direct session URL once the viewer has started. |
+| `models` | none | List configured connection IDs and model IDs without credentials. Pass `connection_id` to inspect one connection's model list. |
+
+Example requests:
+
+```json
+{"action":"start","cwd":"C:\\path\\to\\project","prompt":"Inspect the failing build and fix the cause. Run the relevant check and report the changed files.","sandbox":"workspace-write"}
+{"action":"wait","job_id":"<returned job_id>","wait_sec":25}
+{"action":"resume","job_id":"<completed job_id>","prompt":"Now verify the fix against the second input."}
+{"action":"cancel","job_id":"<running job_id>"}
+```
+
+The child does not automatically receive the parent conversation. Provide file paths, task requirements and acceptance criteria. Use `resume` when the child needs its previous conversation, instead of copying a long transcript back through the main model. Concurrent turns on the same Codex session are blocked.
+
+For `run` or `start`, omit `connection_id` and `model` to use website defaults, or select a connection returned by `models`. `model` can override that connection's raw model ID. The older explicit `profile` argument remains available and is mutually exclusive with `connection_id`.
+
+## Context and usage
+
+- A final reply/page is capped at 4,000 UTF-16 characters by default. Set `max_output_chars` from 256 to 16,000. This limits returned text, not model reasoning or files written by the agent.
+- Full final replies remain in `state/jobs/<job_id>/result.txt`; the response includes the absolute path and pagination information.
+- `status` includes event counts, the last event/item type and completed command/file-change/MCP-call counts when available. It does not forward internal reasoning or tool output.
+- Usage is taken from Codex JSONL `turn.completed` events. Positive counts are returned as `usage.status="reported"`. Missing or all-zero usage is marked `unavailable`, never presented as free usage. No cost estimate is invented.
+- The child's own `codex-subagent` MCP is disabled for that run to avoid recursive bridge startup. The parent MCP and other configuration remain intact.
+- Prompts are sent to the CLI on stdin, rather than included in the operating-system command line.
+
+## Defaults and storage
+
+| Environment variable | Default |
+| --- | --- |
+| `CODEX_SUBAGENT_PROFILE` | `workbuddy` |
+| `CODEX_SUBAGENT_MODEL` | `deepseek-v4.1-flash` |
+| `CODEX_SUBAGENT_MAX_CONCURRENT` | `2` (per MCP process, maximum 16) |
+| `CODEX_SUBAGENT_MAX_OUTPUT_CHARS` | `4000` |
+| `CODEX_SUBAGENT_STATE_DIR` | `state` next to the entry point |
+| `CODEX_SUBAGENT_CODEX_BIN` | Newest installed desktop Codex binary on Windows, otherwise `codex` on PATH |
+| `CODEX_SUBAGENT_MAX_DEPTH` | `2` |
+
+Execution timeout defaults to 900 seconds; `timeout_sec` accepts 1–86,400 seconds. Invalid working directories fail explicitly. Permissions are not escalated on errors.
+
+Task records and final replies survive MCP restarts. Background execution is owned by the live MCP connection: normal disconnect/shutdown stops active tasks and records them as `interrupted`. This is not an independent daemon. A forced host/process crash may prevent normal child cleanup; stale records are marked interrupted when the owning PID is no longer alive. Resume a task when its `session_id` was successfully recorded. Session retention also depends on Codex's normal saved-session storage.
+
+An active task owned by another live MCP connection can be queried, but must be cancelled from its originating chat. The bridge will not terminate processes solely on the basis of PIDs found in a saved record.
+
+The MCP state stores task metadata, visible conversation/tool history and final replies; Codex also maintains its own normal session history. Results are retained until you remove the appropriate records; there is no automatic deletion.
+
+## Activate or roll back
+
+After updating the source files, reconnect this MCP server or restart Codex so it reloads the entry point and tool schema. Already running MCP processes keep their previously loaded code. Keep a copy of the previous source version if a rollback is needed, and back up runtime state separately; state and credentials are not tracked by this repository.
+
+## Validation
+
+From this source directory:
+
+```powershell
+node --test --test-timeout=30000 tests/runtime.test.mjs tests/history.test.mjs tests/models.test.mjs
+```
+
+The tests exercise real process creation and Windows process-tree termination with a local fixture. They cover asynchronous execution, bounded results, missing usage, persistence/resume, session locks, failures, timeout, concurrency, cancellation notifications and MCP disconnect cleanup without contacting a model provider.
+
+An optional smoke test contacts your configured model twice, executes one read-only shell task, restarts the MCP process and verifies that the resumed conversation remembers a random nonce:
+
+```powershell
+node tests/smoke-real.mjs
+```
+
+`node tests/e2e-configured-cli.mjs` verifies the real installed Codex CLI against a deterministic local Chat Completions fixture, including an actual file write in an isolated test workspace, a shell command and session continuation. It does not contact a paid model provider.
+
+Official CLI references: [Non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode), [CLI options](https://learn.chatgpt.com/docs/cli/reference).
