@@ -72,7 +72,7 @@ codex mcp add codex-subagent -- node $entry
 | thinking 兼容扩展 | 同所选 Responses / Chat 协议 | `thinking.type`，如服务支持的 `adaptive` | `thinking.budget_tokens` |
 | reasoning 兼容扩展 | `reasoning.effort` | `reasoning.enabled` 布尔值 | `reasoning.max_tokens`，与强度二选一 |
 
-扩展结构仅供明确支持相应字段的兼容服务使用，不会把原生 Claude Messages 或 Gemini GenerateContent 自动转换为 Codex 协议。页面会预览实际发送的思考参数。服务最终校验档位及模式是否合法；互相冲突的本地设置会在保存时被拒绝。
+扩展结构仅供明确支持相应字段的兼容服务使用，不会把原生 Claude Messages 或 Gemini GenerateContent 自动转换为 Codex 协议。展开“查看请求参数”可预览实际发送的思考参数。服务最终校验档位及模式是否合法；互相冲突的本地设置会在保存时被拒绝。
 
 API 连接的思考参数统一由网关按实际请求的模型注入，覆盖 CLI 继承的强度；自定义值不会被当作 Codex 的执行模式。已有 profile 类型继续使用自己的配置。旧版连接的 `reasoning_effort` 会继续作为连接默认值。升级后重新连接一次 MCP，加载新的启动逻辑。
 
@@ -125,6 +125,8 @@ flowchart LR
 ```
 
 任务服务和网页/网关服务是独立进程。正常断开 MCP 会中断该连接仍在运行的任务；网页服务可以继续查看已保存的记录。已有 Codex profile 类型的连接直接沿用其原路由。
+
+会话顶部保留模型和状态，日期及轮次、工具次数集中在会话信息中。助手回复直接展示内容；侧栏保留品牌、主题与刷新操作，连接异常时显示提示。已有连接以类型标记展示，新建时选择接入方式。参数 JSON 和长说明按需展开，参数错误直接显示。
 
 ## 测试
 

@@ -6,13 +6,15 @@ Requires Node.js 24+ and a Codex CLI supporting `exec --json` and `exec resume`.
 
 ## Local session page
 
+The conversation header shows only the model and status. Dates and turn/tool counts live in session information, and assistant messages display content without identity headers. The sidebar keeps branding, theme and refresh actions; connection errors appear when needed. Existing connections use a type label, while new connections expose the type selector.
+
 Open `http://127.0.0.1:43187`. The page groups conversations by working directory under Projects and shows recent sessions, using a single status dot for running state. Select a conversation to read user instructions, agent replies, commands and tool outputs. It supports search, automatic refresh, earlier-message loading, pinning, display-title changes and JSON export. Empty `write_stdin` polls from the same terminal process are folded into the original command card; calls that carry real input remain separate. Raw API records, exports and full outputs are preserved unchanged. Display metadata does not alter the original Codex logs.
 
 ## Model settings
 
 Connection default reasoning settings remain in Advanced settings; per-model settings open from a model row in the unified model list. Reasoning settings accept raw effort values rather than a fixed low/medium/high enum, and no vendor presets are applied. Connection defaults can be replaced by a complete `model_reasoning[model_id]` object; an empty object explicitly omits all reasoning controls for that model. Missing overrides inherit the connection settings. Old `reasoning_effort` values remain connection defaults.
 
-The standard `effort` format sends `reasoning.effort` (Responses) or `reasoning_effort` (Chat); a `disabled` mode sends `none`. The optional `thinking` extension sends `thinking.type` and `thinking.budget_tokens`, with effort using the selected protocol's field. The optional `reasoning` extension sends `reasoning.enabled` and either `reasoning.effort` or `reasoning.max_tokens`. These extensions require explicit support from the upstream compatible service. There is no native Anthropic/Gemini transport. The UI previews parameters and optionally shows effort metadata from model discovery without applying it automatically.
+The standard `effort` format sends `reasoning.effort` (Responses) or `reasoning_effort` (Chat); a `disabled` mode sends `none`. The optional `thinking` extension sends `thinking.type` and `thinking.budget_tokens`, with effort using the selected protocol's field. The optional `reasoning` extension sends `reasoning.enabled` and either `reasoning.effort` or `reasoning.max_tokens`. These extensions require explicit support from the upstream compatible service. There is no native Anthropic/Gemini transport. The UI shows parameter previews and field explanations on demand, keeps validation errors visible, and optionally shows effort metadata from model discovery without applying it automatically.
 
 The gateway applies settings for each request's actual model and removes inherited CLI effort, including when the configured effort is blank. Raw effort values are not passed as CLI execution modes. Profile exports use the same gateway settings. Reconnect MCP once after upgrading to load the revised child startup logic.
 

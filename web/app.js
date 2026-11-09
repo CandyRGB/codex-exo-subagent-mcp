@@ -19,8 +19,6 @@ async function json(path, options = {}) {
   return response.json();
 }
 function connection(ok, error = '') {
-  $('connection-dot').classList.toggle('disconnected', !ok);
-  $('connection-label').textContent = ok ? '本机记录已连接' : '连接已断开';
   $('error-banner').hidden = ok;
   if (!ok) $('error-banner').textContent = `${error}。请确认本地会话服务仍在运行。`;
 }
@@ -171,10 +169,8 @@ function toolEntry(entry, opened) {
 }
 function messageEntry(entry) {
   if (entry.kind === 'user') { const article = node('article', 'message user-message'); article.setAttribute('aria-label', '任务指令'); const bubble = node('div', 'user-bubble'); markdown(entry.text, bubble); article.append(bubble, node('span', 'message-time', time(entry.at))); return article; }
-  const name = /^deepseek/i.test(data?.session.model || '') ? 'DeepSeek' : data?.session.model || '子代理';
-  const article = node('article', 'message assistant-message'); article.setAttribute('aria-label', `${name} 回复`);
-  const label = node('div', 'assistant-label'); const avatar = node('span', 'agent-avatar'); avatar.append(icon('wave')); label.append(avatar, node('span', '', name), node('span', 'message-time', time(entry.at)));
-  const content = node('div', 'message-content'); markdown(entry.text, content); article.append(label, content); return article;
+  const article = node('article', 'message assistant-message'); article.setAttribute('aria-label', '回复内容');
+  const content = node('div', 'message-content'); markdown(entry.text, content); article.append(content); return article;
 }
 function renderConversation(toBottom = false) {
   if (!data) return;
@@ -184,8 +180,6 @@ function renderConversation(toBottom = false) {
   $('breadcrumb-title').textContent = session.title; $('breadcrumb-title').title = session.title;
   $('model-label').textContent = session.model.replace(/^deepseek-v/i, 'DeepSeek V').replace(/-flash$/i, ' Flash');
   $('status-label').textContent = states[session.status] || session.status; $('status-label').className = `state-chip ${session.status}`;
-  $('created-label').textContent = `${day(session.created_at)} ${time(session.created_at)}`;
-  $('turns-label').textContent = `${session.user_turns} 轮对话 · ${session.tool_calls} 次工具执行`;
   $('pin-button').classList.toggle('active', session.pinned); $('pin-button').title = session.pinned ? '取消置顶' : '置顶会话';
   $('export-button').href = `/api/sessions/${session.id}/export`;
   $('load-earlier').hidden = data.earlier_cursor === null;
@@ -292,7 +286,7 @@ $('rename-form').addEventListener('submit', async event => {
 $('info-button').addEventListener('click', () => {
   if (!data) return;
   const fragment = document.createDocumentFragment(); const s = data.session;
-  const rows = [['工作目录', s.cwd], ['模型与路由', `${s.model} · ${s.provider}`], ['创建时间', fullDate(s.created_at)], ['最后更新', fullDate(s.updated_at)], ['Token 用量', data.usage.status === 'reported' ? `输入 ${(data.usage.input_tokens || 0).toLocaleString()} · 输出 ${(data.usage.output_tokens || 0).toLocaleString()}` : '上游未提供有效统计，暂不可用']];
+  const rows = [['工作目录', s.cwd], ['模型与路由', `${s.model} · ${s.provider}`], ['创建时间', fullDate(s.created_at)], ['最后更新', fullDate(s.updated_at)], ['对话统计', `${s.user_turns ?? 0} 轮对话 · ${s.tool_calls ?? 0} 次工具执行`], ['Token 用量', data.usage.status === 'reported' ? `输入 ${(data.usage.input_tokens || 0).toLocaleString()} · 输出 ${(data.usage.output_tokens || 0).toLocaleString()}` : '上游未提供有效统计，暂不可用']];
   for (const [label, value] of rows) { const row = node('div', 'info-row'); row.append(node('span', '', label), node('div', '', value)); fragment.append(row); }
   const id = node('div', 'info-row'); id.append(node('span', '', '会话 ID'), node('div', '', s.id)); const button = node('button', 'info-copy', '复制会话 ID'); button.addEventListener('click', () => copy(s.id)); id.append(button); fragment.append(id);
   $('info-content').replaceChildren(fragment); $('info-dialog').showModal();

@@ -69,7 +69,11 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       const settings = normalizeReasoning(readReasoningFields());
       const parameters = applyReasoning({ model: '__preview' }, settings, $('connection-protocol').value); delete parameters.model;
       $('reasoning-request-preview').textContent = JSON.stringify(parameters, null, 2);
-    } catch (error) { $('reasoning-request-preview').textContent = error.message; }
+      $('reasoning-validation-error').hidden = true;
+    } catch (error) {
+      $('reasoning-request-preview').textContent = error.message;
+      $('reasoning-validation-error').textContent = error.message; $('reasoning-validation-error').hidden = false;
+    }
     const capability = discoveredCapabilities[reasoningScope || selection.defaultModel];
     $('connection-effort-options').replaceChildren();
     for (const effort of capability?.efforts || []) { const option = el('option'); option.value = effort; $('connection-effort-options').append(option); }
@@ -139,6 +143,10 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('connection-name').value = connection?.name || '';
     $('connection-kind').value = connection?.kind === 'profile' ? 'profile' : 'api';
     $('connection-kind').disabled = Boolean(connection);
+    $('connection-kind-field').hidden = Boolean(connection);
+    $('connection-type-label').hidden = !connection;
+    $('connection-type-label').textContent = connection?.kind === 'profile' ? 'Codex profile' : 'API 连接';
+    $('reasoning-preview').open = false;
     $('connection-protocol').value = connection?.protocol === 'chat_completions' ? 'chat_completions' : 'responses';
     $('connection-base-url').value = connection?.base_url || '';
     $('connection-auth').value = connection?.auth_mode || 'none';

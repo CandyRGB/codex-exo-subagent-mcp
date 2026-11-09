@@ -69,11 +69,16 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   const $ = id => document.getElementById(id);
   const action = label => $('model-rows').querySelectorAll('button').find(button => button.getAttribute('aria-label') === label);
   assert.ok(!$('settings-load-error').textContent, $('settings-load-error').textContent);
+  assert.equal($('connection-kind-field').hidden, true); assert.equal($('connection-type-label').textContent, 'API 连接');
+  assert.equal($('reasoning-preview').open, false);
   assert.equal($('connections-list').querySelectorAll('select').length, 0);
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 1);
   await action('编辑 b 的思考设置').dispatch('click');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 2, 'Viewing model settings is not an edit');
   $('connection-reasoning').value = 'provider:max';
+  $('connection-thinking-budget').value = '2048'; await $('connection-thinking-budget').dispatch('input');
+  assert.equal($('reasoning-preview').open, false); assert.equal($('reasoning-validation-error').hidden, false, 'Parameter errors remain visible while JSON preview is collapsed');
+  $('connection-thinking-budget').value = ''; await $('connection-thinking-budget').dispatch('input'); assert.equal($('reasoning-validation-error').hidden, true);
   await $('test-connection').dispatch('click'); assert.equal(probes, 2); assert.match($('connection-test-result').textContent, /未保存/);
   const radio = $('model-rows').querySelectorAll('input').find(input => input.getAttribute('aria-label') === '将 b 设为默认模型'); radio.checked = true; await radio.dispatch('change');
   $('model-id-input').value = 'c'; await $('add-model').dispatch('click');
@@ -87,6 +92,11 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   await action('编辑 d 的思考设置').dispatch('click'); $('reasoning-model-override').checked = true; await $('reasoning-model-override').dispatch('change'); $('connection-reasoning').value = '';
   await $('connection-form').dispatch('submit'); await eventually(() => saved === 2 && !$('save-connection').disabled);
   assert.equal(store.get(c.id).default_model, 'a'); assert.equal(store.get(c.id).model_reasoning.b, undefined); assert.deepEqual(store.get(c.id).model_reasoning.d, {});
+  await $('new-connection').dispatch('click');
+  assert.equal($('connection-kind-field').hidden, false); assert.equal($('connection-kind').disabled, false); assert.equal($('connection-type-label').hidden, true);
+  const profile = store.publicConfig().connections.find(connection => connection.kind === 'profile');
+  const profileButton = $('connections-list').querySelectorAll('button').find(button => button.textContent === profile.name); await profileButton.dispatch('click');
+  assert.equal($('connection-kind-field').hidden, true); assert.equal($('connection-type-label').textContent, 'Codex profile');
 });
 
 test('manual effort values and complete per-model overrides round-trip without changing legacy defaults', () => {
