@@ -1,4 +1,4 @@
-# codex-subagent v4 — configurable model workspace
+# codex-exo-subagent v4 — configurable model workspace
 
 Run independent Codex CLI agents through configured local models, API services, model routers or an existing Codex profile. The current `workbuddy` profile and `deepseek-v4.1-flash` model are retained as the initial connection. The default official Codex model and authentication configuration are not changed.
 

@@ -199,7 +199,7 @@ function renderConversation(toBottom = false) {
   for (const entry of groupCommandRuns(coalesceTerminalEntries(data.entries))) fragment.append(entry.kind === 'command_group' ? commandGroup(entry, opened, previouslyGrouped) : entry.kind === 'tool' ? toolEntry(entry, opened) : messageEntry(entry));
   if (!data.entries.length) fragment.append(node('p', 'empty-nav', isActive(session.status) ? 'DeepSeek 已接收任务，正在等待第一条记录…' : '此会话暂未找到消息记录。'));
   $('transcript').replaceChildren(fragment);
-  document.title = `${session.title} · 子代理会话`;
+  document.title = `${session.title} · codex-exo-subagent`;
   requestAnimationFrame(() => { scroll.scrollTop = toBottom || nearBottom ? scroll.scrollHeight : previousTop; checkScroll(); });
 }
 function checkScroll() { const s = $('conversation-scroll'); $('jump-bottom').hidden = !data || s.scrollHeight - s.scrollTop - s.clientHeight < 200; }
@@ -216,7 +216,7 @@ async function loadList() {
       history.replaceState(null, '', location.pathname + location.search);
       $('conversation').hidden = true; $('top-actions').hidden = true; $('welcome').hidden = false;
       $('project-label').textContent = '子代理会话'; $('breadcrumb-title').textContent = '会话记录';
-      document.title = '子代理会话 · Subagent';
+      document.title = '子代理会话 · codex-exo-subagent';
       renderNavigation();
       if (sessions.length) select(sessions[0].id);
     }
@@ -253,7 +253,7 @@ function fromHash() {
     $('app').classList.add('settings-mode'); $('models-nav').classList.add('active');
     $('conversation-scroll').hidden = true; $('top-actions').hidden = true;
     $('project-label').textContent = '设置'; $('breadcrumb-title').textContent = '模型与连接';
-    document.title = '模型与连接 · Subagent'; renderNavigation(); void modelSettings.show(); return;
+    document.title = '模型与连接 · codex-exo-subagent'; renderNavigation(); void modelSettings.show(); return;
   }
   settingsOpen = false; modelSettings.hide(); $('app').classList.remove('settings-mode'); $('models-nav').classList.remove('active'); $('conversation-scroll').hidden = false;
   const match = location.hash.match(/^#\/session\/([a-f0-9-]+)$/i);

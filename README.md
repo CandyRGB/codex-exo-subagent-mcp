@@ -1,6 +1,6 @@
-<p align="center"><img src="web/favicon.svg" width="64" alt="Codex Exo Subagent MCP"></p>
+<p align="center"><img src="web/favicon.svg" width="64" alt="codex-exo-subagent"></p>
 
-# codex-exo-subagent-mcp
+# codex-exo-subagent
 
 为 Codex 接入外部子代理模型，并提供本地会话工作区。支持本地部署、直连 API 和模型路由，保留主代理的官方模型配置。
 
