@@ -78,7 +78,6 @@ function sessionButton(session, recent = false) {
   button.title = session.title;
   button.dataset.sessionId = session.id;
   if (session.id === selectedId) button.setAttribute('aria-current', 'page');
-  if (recent) button.append(node('span', `session-dot${isActive(session.status) ? ' running' : ''}`));
   button.append(node('span', 'session-name', session.title));
   if (isActive(session.status) && !recent) button.append(node('span', 'status-dot running'));
   button.addEventListener('click', () => select(session.id));
@@ -100,8 +99,8 @@ function renderNavigation() {
   for (const [id, group] of projects) {
     const open = q || !collapsed.has(id);
     const button = node('button', 'project-button'); button.setAttribute('aria-expanded', String(Boolean(open))); button.title = group[0].cwd;
-    const chevron = icon('chevron'); chevron.classList.add('chevron'); const folder = icon('folder'); folder.classList.add('folder-icon');
-    button.append(chevron, folder, node('span', 'project-name', group[0].project), node('span', 'count', String(group.length)));
+    const chevron = icon('chevron'); chevron.classList.add('chevron');
+    button.append(chevron, node('span', 'project-name', group[0].project), node('span', 'count', String(group.length)));
     button.addEventListener('click', () => { collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id); localStorage.setItem('subagent-projects', JSON.stringify([...collapsed])); renderNavigation(); });
     projectSection.append(button);
     if (open) { const list = node('div', 'project-sessions'); for (const s of group) list.append(sessionButton(s)); projectSection.append(list); }
