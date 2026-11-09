@@ -9,6 +9,7 @@ import { get as httpGet } from 'node:http';
 import { SessionRepository, parseRollout } from '../history.mjs';
 import { createViewer } from '../viewer.mjs';
 import { JobManager } from '../runtime.mjs';
+import { commandOutput } from '../web/tool-output.js';
 
 function fixture() {
   const root = fileURLToPath(new URL(`../.test-runs/history-${randomUUID()}/`, import.meta.url));
@@ -165,4 +166,13 @@ test('HTTP serves real histories and assets; rejects foreign origins, DNS rebind
   assert.equal((await fetch(`${base}/api/sessions/${legacy.id}/export`)).status, 404);
   assert.equal((await fetch(base + '/runtime.mjs')).status, 404);
   assert.equal((await fetch(`${base}/api/sessions/${native.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '浏览器修改标题' }) })).status, 200);
+});
+test('command display removes transport metadata while preserving stdout and ordinary text', () => {
+  const stdout = '391\nProcess exited with code 9\nOutput:\n保留原始内容\n';
+  assert.equal(commandOutput('Chunk ID: 83046f\nWall time: 0.3305 seconds\nProcess exited with code 0\nOriginal token count: 2\nOutput:\n' + stdout), stdout);
+  assert.equal(commandOutput('Process exited with code 1\r\nFinal output:\r\n错误信息\r\n'), '错误信息\r\n');
+  assert.equal(commandOutput('Process running with session ID 42\nOutput:\nstarting…'), 'starting…');
+  for (const text of ['Output:\n391', '普通输出\nProcess exited with code 0\nOutput:\n391', 'Chunk ID: printed-by-program\nnot metadata', '  原样保留\r\n']) assert.equal(commandOutput(text), text);
+  assert.equal(commandOutput('Process exited with code 0\nOutput:\n'), '');
+  assert.equal(commandOutput(null), '');
 });

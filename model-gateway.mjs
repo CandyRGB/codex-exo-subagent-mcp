@@ -1,6 +1,23 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { once } from 'node:events';
 import { safeError } from './model-store.mjs';
+import { applyReasoning, effectiveReasoning, reasoningCapabilities } from './reasoning.mjs';
+
+async function fetchUpstream(url, options) {
+  try { return await fetch(url, options); }
+  catch (error) {
+    if (error.name === 'AbortError') throw error;
+    const code = error.cause?.code || error.cause?.errors?.[0]?.code || (error.name === 'TimeoutError' ? 'ETIMEDOUT' : '');
+    const reasons = {
+      UND_ERR_CONNECT_TIMEOUT: '连接超时', ETIMEDOUT: '请求超时', ENOTFOUND: '域名解析失败', EAI_AGAIN: '域名解析暂时失败',
+      ECONNREFUSED: '连接被拒绝，请确认服务已启动', ECONNRESET: '连接被重置', UND_ERR_SOCKET: '网络连接中断',
+      CERT_HAS_EXPIRED: 'TLS 证书已过期', DEPTH_ZERO_SELF_SIGNED_CERT: 'TLS 证书不受信任',
+      UNABLE_TO_VERIFY_LEAF_SIGNATURE: '无法验证 TLS 证书', SELF_SIGNED_CERT_IN_CHAIN: 'TLS 证书链不受信任', ERR_TLS_CERT_ALTNAME_INVALID: 'TLS 证书域名不匹配',
+    };
+    const reason = reasons[code] ? `${reasons[code]}，${code}` : '网络请求未完成';
+    throw Object.assign(new Error(`无法连接模型服务 ${new URL(url).origin}（${reason}）。请检查 API 地址、网络和代理设置。`), { status: /TIMEOUT|ETIMEDOUT/.test(code) ? 504 : 502 });
+  }
+}
 
 export async function readJSON(request, limit = 1_000_000) {
   let size = 0; const chunks = [];
@@ -115,21 +132,31 @@ export class ModelGateway {
     const secret = keyOverride || this.store.secret(connection);
     const headers = secret ? { [connection.auth_header]: /^authorization$/i.test(connection.auth_header) ? `Bearer ${secret}` : secret } : {};
     try {
-      const response = await fetch(connection.base_url + '/models', { headers, redirect: 'error', signal: AbortSignal.timeout(15000) });
+      const response = await fetchUpstream(connection.base_url + '/models', { headers, redirect: 'error', signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new Error(`模型列表请求失败 (${response.status})；此服务可能需要手动填写模型 ID。`);
       const data = await response.json();
       const models = [...new Set((data.data || data.models || []).map(model => typeof model === 'string' ? model : model.id || model.name).filter(model => typeof model === 'string'))].slice(0, 2000).sort();
-      return { models };
+      const entries = (data.data || data.models || []).filter(item => item && typeof item === 'object' && models.includes(item.id || item.name)).slice(0, 2000);
+      return { models, capabilities: Object.fromEntries(entries.map(item => [item.id || item.name, reasoningCapabilities(item)])) };
     } catch (error) { throw Object.assign(new Error(safeError(error.message, secret)), { status: 400 }); }
   }
 
   async probe(id, model) {
     const connection = this.store.get(id);
+    if (!connection.enabled) throw Object.assign(new Error('连接已停用，请先勾选“启用此连接”并保存，再进行测试。'), { status: 400 });
     if (connection.kind === 'profile') return { ok: true, level: 'profile', tool_calling: null, message: '此连接沿用现有 Codex 配置；模型可用性请通过实际任务验证。' };
+    const selectedModel = model || connection.default_model;
+    const settings = effectiveReasoning(connection, selectedModel);
     const started = Date.now();
     const response = await fetch(`${this.baseUrl()}/inference/${id}/v1/responses`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.store.gatewayToken()}`, 'X-Subagent-Route-Hash': this.store.fingerprint(connection) },
-      body: JSON.stringify({ model: model || connection.default_model, stream: true, input: [{ role: 'user', content: 'Call subagent_connection_probe with ok=true. Do not do anything else.' }], max_output_tokens: 128, tools: [{ type: 'function', name: 'subagent_connection_probe', description: 'Check the connection.', parameters: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } }], tool_choice: { type: 'function', name: 'subagent_connection_probe' } }),
+      body: JSON.stringify({
+        model: selectedModel, stream: true,
+        input: [{ role: 'user', content: 'Call subagent_connection_probe with ok=true. Do not do anything else.' }],
+        max_output_tokens: Math.max(2048, (settings.thinking_budget || 0) + 256),
+        tools: [{ type: 'function', name: 'subagent_connection_probe', description: 'Check the connection.', parameters: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } }],
+        tool_choice: 'auto',
+      }),
       signal: AbortSignal.timeout(45000),
     });
     if (!response.ok) { const error = await response.json().catch(() => ({})); throw Object.assign(new Error(error.error?.message || `连接测试失败 (${response.status})`), { status: 400 }); }
@@ -137,6 +164,7 @@ export class ModelGateway {
     let completed = false, tool = false;
     for await (const event of sseJSON(response.body)) {
       if (event.type === 'error' || event.type === 'response.failed') throw Object.assign(new Error(event.message || event.response?.error?.message || '模型流式响应失败。'), { status: 400 });
+      if (event.type === 'response.incomplete') throw Object.assign(new Error('测试响应未完成（可能达到输出或思考 token 上限），工具调用兼容性尚未确认。'), { status: 400 });
       if (event.type === 'response.completed') {
         completed = true;
         const call = event.response?.output?.find(item => item.type === 'function_call' && item.name === 'subagent_connection_probe');
@@ -158,12 +186,13 @@ export class ModelGateway {
     response.once('close', () => { if (!response.writableEnded) controller.abort(); });
     try {
       const connection = this.store.get(id);
-      if (!connection.enabled || connection.kind === 'profile') throw Object.assign(new Error('该连接无法通过本机模型网关使用。'), { status: 400 });
+      if (!connection.enabled) throw Object.assign(new Error('连接已停用，请先启用此连接。'), { status: 400 });
+      if (connection.kind === 'profile') throw Object.assign(new Error('已有 Codex profile 由 CLI 直接使用，不经过本机模型网关。'), { status: 400 });
       if (request.headers['x-subagent-route-hash'] !== this.store.fingerprint(connection)) throw Object.assign(new Error('连接配置已经改变，请新建任务。'), { status: 409 });
       const body = await readJSON(request, 64_000_000);
       const auth = this.store.headers(connection); secret = auth.secret;
       if (connection.protocol === 'responses') {
-        const upstream = await fetch(connection.base_url + '/responses', { method: 'POST', headers: auth.headers, body: JSON.stringify(body), redirect: 'error', signal: controller.signal });
+        const upstream = await fetchUpstream(connection.base_url + '/responses', { method: 'POST', headers: auth.headers, body: JSON.stringify(applyReasoning(body, connection)), redirect: 'error', signal: controller.signal });
         if (!upstream.ok) { const error = await upstream.text(); throw Object.assign(new Error(`上游接口 ${upstream.status}: ${error.slice(0, 2000)}`), { status: upstream.status >= 400 && upstream.status <= 599 ? upstream.status : 502 }); }
         response.writeHead(200, { 'Content-Type': upstream.headers.get('content-type') || 'text/event-stream', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
         for await (const chunk of upstream.body) { if (!response.write(chunk)) await once(response, 'drain'); }
@@ -179,9 +208,10 @@ export class ModelGateway {
   async chat(connection, body, response, headers, signal) {
     const cached = body.previous_response_id && this.cache.get(body.previous_response_id);
     if (body.previous_response_id && (!cached || cached.fingerprint !== this.store.fingerprint(connection))) throw new Error('找不到 previous_response_id 的上下文，请重试并发送完整历史。');
-    const { request, tools } = responsesToChat(body, cached?.messages || []);
-    if (connection.reasoning_effort) request.reasoning_effort = connection.reasoning_effort;
-    const send = () => fetch(connection.base_url + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(request), redirect: 'error', signal });
+    const converted = responsesToChat(body, cached?.messages || []);
+    const tools = converted.tools;
+    const request = applyReasoning(converted.request, connection);
+    const send = () => fetchUpstream(connection.base_url + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(request), redirect: 'error', signal });
     let upstream = await send();
     if (!upstream.ok) {
       const error = await upstream.text();

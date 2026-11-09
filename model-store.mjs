@@ -2,6 +2,7 @@ import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { normalizeReasoning } from './reasoning.mjs';
 
 const validId = /^[a-zA-Z0-9_-]{1,80}$/;
 const fail = message => { throw Object.assign(new Error(message), { status: 400 }); };
@@ -53,7 +54,7 @@ export class ModelStore {
   }
   publicConfig() {
     const config = this.read(); const secrets = this.credentials();
-    const fields = ['id', 'name', 'kind', 'protocol', 'profile', 'base_url', 'models', 'default_model', 'auth_mode', 'auth_header', 'api_key_env', 'context_window', 'reasoning_effort', 'enabled'];
+    const fields = ['id', 'name', 'kind', 'protocol', 'profile', 'base_url', 'models', 'default_model', 'auth_mode', 'auth_header', 'api_key_env', 'context_window', 'reasoning_effort', 'thinking_mode', 'thinking_budget', 'thinking_format', 'model_reasoning', 'enabled'];
     return { version: config.version, default_connection_id: config.default_connection_id, secret_storage_supported: this.codec.supported, connections: config.connections.map(c => ({ ...Object.fromEntries(fields.filter(field => c[field] !== undefined).map(field => [field, c[field]])), has_api_key: Boolean(secrets[c.id]) })) };
   }
   normalize(input, previous = null) {
@@ -61,14 +62,15 @@ export class ModelStore {
     if (!text(input.name, 80)) fail('请填写连接名称，最多 80 个字符。');
     const kind = input.kind || 'api';
     if (!['local', 'api', 'router', 'profile'].includes(kind)) fail('请选择有效的接入方式。');
-    if (kind === 'profile' && previous?.kind !== 'profile') fail('请使用本地部署、API 或代理路由创建新连接。');
     const models = [...new Set((Array.isArray(input.models) ? input.models : String(input.models || '').split(/[\r\n]+/)).map(m => String(m).trim()).filter(Boolean))];
     if (!models.length || models.length > 100 || models.some(model => !text(model) || /\s/.test(model))) fail('请配置 1–100 个模型 ID，每行一个，不包含空格。');
     const defaultModel = input.default_model || models[0];
     if (!models.includes(defaultModel)) fail('默认模型必须在已配置的模型列表中。');
     const connection = { id: previous?.id || `conn-${randomUUID().slice(0, 8)}`, name: input.name.trim(), kind, enabled: input.enabled !== false, models, default_model: defaultModel };
     if (kind === 'profile') {
-      connection.protocol = 'profile'; connection.profile = previous.profile; connection.auth_mode = 'none';
+      const profile = input.profile ?? previous?.profile;
+      if (typeof profile !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(profile)) fail('请填写已有 Codex profile 名称，只能包含字母、数字、短横线和下划线。');
+      connection.protocol = 'profile'; connection.profile = profile; connection.auth_mode = 'none';
       return connection;
     }
     if (!['responses', 'chat_completions'].includes(input.protocol)) fail('请选择 Responses 或 Chat Completions 协议。');
@@ -90,9 +92,12 @@ export class ModelStore {
       if (!Number.isInteger(value) || value < 2048 || value > 4_000_000) fail('上下文窗口必须在 2048–4000000 token 之间。');
       connection.context_window = value;
     }
-    if (input.reasoning_effort) {
-      if (!['low', 'medium', 'high'].includes(input.reasoning_effort)) fail('推理强度无效。');
-      connection.reasoning_effort = input.reasoning_effort;
+    Object.assign(connection, normalizeReasoning(input));
+    if (input.model_reasoning !== undefined) {
+      if (!input.model_reasoning || typeof input.model_reasoning !== 'object' || Array.isArray(input.model_reasoning)) fail('模型独立思考设置必须是对象。');
+      const entries = Object.entries(input.model_reasoning);
+      if (entries.length > 100 || entries.some(([model]) => !models.includes(model))) fail('独立思考设置只能用于当前模型列表中的模型。');
+      connection.model_reasoning = Object.fromEntries(entries.map(([model, settings]) => [model, normalizeReasoning(settings)]));
     }
     return connection;
   }

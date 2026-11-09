@@ -9,6 +9,8 @@ import { ModelStore, WindowsSecretCodec } from '../model-store.mjs';
 import { JobManager } from '../runtime.mjs';
 import { createViewer } from '../viewer.mjs';
 import { readJSON, sseJSON, responsesToChat } from '../model-gateway.mjs';
+import { managedConfig, tomlValue } from '../model-config.mjs';
+import { applyReasoning, effectiveReasoning, normalizeReasoning } from '../reasoning.mjs';
 
 function fixture() { const stateDir = fileURLToPath(new URL(`../.test-runs/models-${randomUUID()}/`, import.meta.url)); mkdirSync(stateDir, { recursive: true }); return stateDir; }
 function save(store, extra = {}) {
@@ -47,6 +49,123 @@ test('configuration preserves the current profile and supports explicit defaults
   assert.throws(() => store.remove(c.id), /默认/);
   store.setDefault('current-profile', 'deepseek-v4.1-flash'); store.remove(c.id);
   assert.equal(store.read().connections.length, 1);
+});
+
+test('manual effort values and complete per-model overrides round-trip without changing legacy defaults', () => {
+  const store = new ModelStore({ stateDir: fixture() });
+  const c = save(store, { models: ['a', 'b', 'c'], default_model: 'a', reasoning_effort: 'high', model_reasoning: { a: { reasoning_effort: 'provider:max' }, b: {} } });
+  const reopened = new ModelStore({ stateDir: store.stateDir });
+  const persisted = reopened.get(c.id);
+  assert.equal(effectiveReasoning(persisted, 'a').reasoning_effort, 'provider:max');
+  assert.deepEqual(effectiveReasoning(persisted, 'b'), {});
+  assert.equal(effectiveReasoning(persisted, 'c').reasoning_effort, 'high');
+  assert.deepEqual(reopened.publicConfig().connections.at(-1).model_reasoning, c.model_reasoning);
+  for (const effort of ['none', 'minimal', 'xhigh', 'max', 'ultra']) assert.equal(normalizeReasoning({ reasoning_effort: effort }).reasoning_effort, effort);
+  const before = readFileSync(store.path, 'utf8');
+  assert.throws(() => store.save({ ...c, model_reasoning: { missing: {} } }, c.id), /当前模型列表/);
+  assert.throws(() => store.save({ ...c, thinking_budget: 2048 }, c.id), /通用预算/);
+  assert.throws(() => store.save({ ...c, thinking_mode: 'disabled' }, c.id), /关闭思考/);
+  assert.throws(() => normalizeReasoning({ thinking_format: 'thinking', thinking_budget: true }), /整数/);
+  assert.throws(() => normalizeReasoning({ thinking_format: 'thinking', thinking_budget: ' ' }), /整数/);
+  assert.equal(readFileSync(store.path, 'utf8'), before);
+});
+
+test('both protocols apply selected-model efforts and explicit blanks omit inherited CLI effort', async t => {
+  for (const protocol of ['responses', 'chat_completions']) {
+    let captured;
+    const endpoint = await upstream(t, async (req, res) => {
+      captured = await readJSON(req);
+      if (protocol === 'responses') {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.end('event: response.completed\ndata: {"type":"response.completed","response":{"id":"done","status":"completed","output":[]}}\n\n');
+      } else stream(res, [{ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }]);
+    });
+    const store = new ModelStore({ stateDir: fixture() });
+    const c = save(store, { protocol, base_url: endpoint, models: ['a', 'b', 'c'], default_model: 'a', reasoning_effort: 'high', model_reasoning: { a: { reasoning_effort: 'provider:max' }, b: {} } }); const v = await viewer(t, store);
+    for (const [model, expected] of [['a', 'provider:max'], ['b', undefined], ['c', 'high']]) {
+      const result = await inference(v, store, c, { model, input: 'hello', reasoning: { effort: 'ultra' } }); assert.equal(result.status, 200);
+      assert.equal(protocol === 'responses' ? captured.reasoning?.effort : captured.reasoning_effort, expected);
+    }
+    assert.deepEqual(applyReasoning({ model: 'b', reasoning: { effort: 'ultra' } }, store.get(c.id)), { model: 'b' });
+  }
+});
+
+test('thinking modes, budgets and compatible reasoning objects use distinct fields', async t => {
+  let captured;
+  const endpoint = await upstream(t, async (req, res) => { captured = await readJSON(req); stream(res, [{ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }]); });
+  const store = new ModelStore({ stateDir: fixture() });
+  const c = save(store, { base_url: endpoint, thinking_format: 'thinking', thinking_mode: 'adaptive', thinking_budget: 8192, reasoning_effort: 'high' }); const v = await viewer(t, store);
+  await inference(v, store, c, { model: c.default_model, input: 'hello' });
+  assert.deepEqual(captured.thinking, { type: 'adaptive', budget_tokens: 8192 }); assert.equal(captured.reasoning_effort, 'high');
+  await v.gateway.probe(c.id);
+  assert.ok(captured.max_tokens > captured.thinking.budget_tokens, 'Probe output cap reserves space beyond the configured thinking budget');
+  store.save({ ...c, thinking_format: 'reasoning', thinking_mode: 'enabled', thinking_budget: 2048, reasoning_effort: '' }, c.id);
+  await inference(v, store, c, { model: c.default_model, input: 'hello' });
+  assert.deepEqual(captured.reasoning, { enabled: true, max_tokens: 2048 }); assert.equal(captured.thinking, undefined); assert.equal(captured.reasoning_effort, undefined);
+  const disabled = normalizeReasoning({ thinking_mode: 'disabled' });
+  assert.deepEqual(applyReasoning({ model: 'x' }, disabled, 'responses').reasoning, { effort: 'none' });
+  assert.equal(applyReasoning({ model: 'x' }, disabled, 'chat_completions').reasoning_effort, 'none');
+  assert.throws(() => normalizeReasoning({ thinking_mode: 'adaptive' }), /thinking 对象/);
+});
+
+test('model discovery exposes effort capabilities as hints and does not change saved parameters', async t => {
+  const endpoint = await upstream(t, (req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ data: [{ id: 'test-model', effort: { supported_levels: ['low', 'high', 'max'], default_level: 'high' }, secret: 'must-not-appear' }] })); });
+  const store = new ModelStore({ stateDir: fixture() }); const c = save(store, { base_url: endpoint }); const v = await viewer(t, store);
+  const before = readFileSync(store.path, 'utf8'); const result = await v.gateway.discover(c, c.id);
+  assert.deepEqual(result.capabilities['test-model'], { efforts: ['low', 'high', 'max'], default_effort: 'high' });
+  assert.ok(!JSON.stringify(result).includes('must-not-appear')); assert.equal(readFileSync(store.path, 'utf8'), before);
+});
+
+test('managed CLI does not interpret upstream effort values as client execution modes', async t => {
+  const stateDir = fixture(); const store = new ModelStore({ stateDir });
+  const c = save(store, { reasoning_effort: 'provider:max' }); store.setDefault(c.id, c.default_model);
+  const manager = new JobManager({ stateDir, modelStore: store, env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0' }, codexBin: process.execPath, codexArgs: [fileURLToPath(new URL('./fake-codex.mjs', import.meta.url))] }); t.after(() => manager.shutdown());
+  const result = await manager.call({ prompt: JSON.stringify({ reportArgs: true }) });
+  const argv = JSON.parse(result.result.text).argv;
+  assert.ok(!argv.some(arg => arg.includes('model_reasoning_effort') || arg.includes('provider:max')));
+});
+
+test('users can reference existing profiles and preserve legacy API connection routing on edits', async t => {
+  const stateDir = fixture(); const store = new ModelStore({ stateDir });
+  const c = save(store, { kind: 'profile', profile: 'my-route' });
+  store.setDefault(c.id, c.default_model);
+  const manager = new JobManager({ stateDir, modelStore: store, env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0' }, codexBin: process.execPath, codexArgs: [fileURLToPath(new URL('./fake-codex.mjs', import.meta.url))] });
+  t.after(() => manager.shutdown());
+  const result = await manager.call({ prompt: JSON.stringify({ reportArgs: true }) });
+  const argv = JSON.parse(result.result.text).argv;
+  assert.equal(argv[argv.indexOf('--profile') + 1], 'my-route');
+  assert.ok(!argv.some(a => a.includes('/inference/')));
+  assert.throws(() => save(store, { kind: 'profile', profile: '../bad' }), /profile/);
+  const legacy = save(store, { kind: 'router' });
+  const before = store.fingerprint(store.get(legacy.id));
+  store.save({ ...legacy, name: 'Renamed' }, legacy.id);
+  assert.equal(store.fingerprint(store.get(legacy.id)), before);
+});
+
+test('profile export reuses runtime provider configuration without exporting secrets or writing Codex settings', async t => {
+  const secret = 'export-private-' + randomUUID();
+  const store = new ModelStore({ stateDir: fixture(), env: { EXPORT_SECRET: secret } });
+  const c = save(store, { auth_mode: 'env', api_key_env: 'EXPORT_SECRET', context_window: 32768, reasoning_effort: 'low' });
+  const before = readFileSync(store.path, 'utf8');
+  const v = await viewer(t, store);
+  const browserModule = await fetch(v.url + '/reasoning.js');
+  assert.equal(browserModule.status, 200);
+  assert.match(browserModule.headers.get('content-type'), /javascript/);
+  assert.ok((await browserModule.text()).includes('export function applyReasoning'));
+  const route = `${v.url}/api/config/connections/${c.id}/export-profile`;
+  assert.equal((await fetch(route, { method: 'POST', headers: { Origin: 'https://foreign.test' } })).status, 403);
+  const response = await fetch(route, { method: 'POST' }); assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.filename, `exo-${c.id}.config.toml`);
+  assert.ok(data.target.endsWith(data.filename));
+  assert.ok(data.content.includes(`model = "test-model"`));
+  for (const [key, value] of Object.entries(managedConfig(c, { baseUrl: v.url, fingerprint: store.fingerprint(store.get(c.id)) }))) assert.ok(data.content.includes(`${key} = ${tomlValue(value)}`));
+  assert.ok(!JSON.stringify(data).includes(secret));
+  assert.ok(!JSON.stringify(data).includes(store.gatewayToken()));
+  assert.ok(data.launch.includes(store.tokenPath));
+  assert.equal(readFileSync(store.path, 'utf8'), before);
+  assert.equal((await fetch(`${v.url}/api/config/connections/current-profile/export-profile`, { method: 'POST' })).status, 400);
+  store.save({ ...c, enabled: false }, c.id);
+  assert.equal((await fetch(route, { method: 'POST' })).status, 400);
 });
 
 test('invalid endpoints and authentication are rejected without changing persisted settings', () => {
@@ -167,4 +286,46 @@ test('model discovery honors no-auth selection even if a hidden input still cont
   const store = new ModelStore({ stateDir: fixture() }); const v = await viewer(t, store);
   const result = await v.gateway.discover({ name: 'No auth', kind: 'local', protocol: 'chat_completions', base_url: endpoint, auth_mode: 'none', api_key: 'must-not-be-sent', models: [] });
   assert.equal(authorization, undefined); assert.deepEqual(result.models, ['model']);
+});
+
+test('connection failures identify the upstream network error and disabled connections are explicit', async t => {
+  const server = http.createServer();
+  await new Promise(done => server.listen(0, '127.0.0.1', done));
+  const port = server.address().port;
+  await new Promise(done => server.close(done));
+  const store = new ModelStore({ stateDir: fixture() });
+  const c = save(store, { protocol: 'responses', base_url: `http://127.0.0.1:${port}/v1` });
+  const v = await viewer(t, store);
+  const result = await inference(v, store, c, { model: 'test-model', input: 'hello' });
+  assert.equal(result.status, 502);
+  assert.match(result.error.error.message, /无法连接模型服务/);
+  assert.match(result.error.error.message, /ECONNREFUSED/);
+  await assert.rejects(v.gateway.discover(c, c.id), /ECONNREFUSED/);
+  store.save({ ...c, enabled: false }, c.id);
+  await assert.rejects(v.gateway.probe(c.id), /连接已停用/);
+});
+
+test('connection probes allow automatic tools in thinking mode and only confirm observed tool calls', async t => {
+  for (const protocol of ['responses', 'chat_completions']) {
+    let observed, emitTool = true;
+    const endpoint = await upstream(t, async (req, res) => {
+      const body = await readJSON(req); observed = body;
+      if (body.tool_choice !== 'auto') { res.writeHead(400); res.end('{"error":{"message":"Thinking mode does not support this tool_choice"}}'); return; }
+      if (protocol === 'responses') {
+        const output = emitTool ? [{ type: 'function_call', name: 'subagent_connection_probe', arguments: '{"ok":true}' }] : [];
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.end('event: response.completed\ndata: ' + JSON.stringify({ type: 'response.completed', response: { status: 'completed', output } }) + '\n\n');
+      } else {
+        const delta = emitTool ? { tool_calls: [{ index: 0, id: 'probe', function: { name: body.tools[0].function.name, arguments: '{"ok":true}' } }] } : { content: 'Hello' };
+        stream(res, [{ choices: [{ delta, finish_reason: emitTool ? 'tool_calls' : 'stop' }] }]);
+      }
+    });
+    const store = new ModelStore({ stateDir: fixture() }); const c = save(store, { protocol, base_url: endpoint, reasoning_effort: 'high' }); const v = await viewer(t, store);
+    assert.equal((await v.gateway.probe(c.id)).tool_calling, true);
+    assert.equal(protocol === 'responses' ? observed.reasoning?.effort : observed.reasoning_effort, 'high');
+    emitTool = false;
+    const unconfirmed = await v.gateway.probe(c.id);
+    assert.equal(unconfirmed.tool_calling, false);
+    assert.match(unconfirmed.message, /尚未确认/);
+  }
 });

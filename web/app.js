@@ -1,4 +1,5 @@
 import { createModelSettings } from './settings.js';
+import { commandOutput } from './tool-output.js';
 const $ = id => document.getElementById(id);
 const icon = name => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); const use = document.createElementNS(s.namespaceURI, 'use'); use.setAttribute('href', `#i-${name}`); s.append(use); return s; };
 const node = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
@@ -8,7 +9,7 @@ const time = value => value ? new Date(value).toLocaleTimeString('zh-CN', { hour
 const fullDate = value => value ? new Date(value).toLocaleString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
 function day(value) { const date = new Date(value); const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate() - 1); return date.toDateString() === today.toDateString() ? '今天' : date.toDateString() === yesterday.toDateString() ? '昨天' : date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }); }
 function recentTime(value) { return day(value) === '今天' ? time(value) : day(value); }
-let sessions = [], selectedId = null, data = null, etag = null, listSignature = '', scope = 'all', automatic = true, busy = false, loading = false, showAllRecent = false, settingsOpen = false;
+let sessions = [], selectedId = null, data = null, etag = null, listSignature = '', scope = 'all', busy = false, loading = false, showAllRecent = false, settingsOpen = false;
 let collapsed = new Set();
 try { collapsed = new Set(JSON.parse(localStorage.getItem('subagent-projects') || '[]')); document.documentElement.dataset.theme = localStorage.getItem('subagent-theme') || 'dark'; } catch {}
 
@@ -133,10 +134,25 @@ function toolEntry(entry, opened) {
   if (entry.status === 'completed') status.append(icon('check'));
   status.append(document.createTextNode(entry.status === 'running' ? '执行中' : entry.status === 'failed' ? '执行失败' : '已执行'));
   const chevron = icon('chevron'); chevron.classList.add('tool-chevron'); summary.append(symbol, caption, status, chevron);
-  const body = node('div', 'tool-details'); body.append(node('div', 'tool-section-label', shell ? '命令' : '参数'), node('pre', '', pretty(shell && cmd ? cmd : entry.arguments)));
-  if (entry.output) body.append(node('div', 'tool-section-label', `执行结果${entry.exit_code !== null && entry.exit_code !== undefined ? ` · 退出码 ${entry.exit_code}` : ''}`), node('pre', '', pretty(entry.output)));
-  if (entry.output_truncated) { const full = node('a', 'tool-copy', '输出较长，下载完整执行结果'); full.href = `/api/sessions/${data.session.id}/entries/${entry.id}/output`; body.append(full); }
-  const copyButton = node('button', 'tool-copy', '复制执行记录'); copyButton.addEventListener('click', () => copy(`${pretty(entry.arguments)}\n\n${pretty(entry.output)}`)); body.append(copyButton);
+  const body = node('div', 'tool-details');
+  if (!shell) body.append(node('div', 'tool-section-label', '参数'), node('pre', '', pretty(entry.arguments)));
+  const output = shell ? commandOutput(entry.output) : pretty(entry.output) || '';
+  const outputPath = `/api/sessions/${data.session.id}/entries/${entry.id}/output`;
+  const outputBox = node('div', 'tool-output');
+  const copyButton = node('button', 'icon-button tool-output-copy'); copyButton.type = 'button';
+  copyButton.title = shell ? '复制命令输出' : '复制工具输出'; copyButton.setAttribute('aria-label', copyButton.title); copyButton.disabled = !output;
+  copyButton.append(icon('copy')); copyButton.addEventListener('click', async () => {
+    if (!entry.output_truncated) { await copy(output); return; }
+    copyButton.disabled = true;
+    try {
+      const response = await fetch(outputPath);
+      if (!response.ok) throw new Error('无法读取完整输出，请稍后重试');
+      const full = await response.text(); await copy(shell ? commandOutput(full) : full);
+    } catch (error) { toast(error.message); }
+    finally { copyButton.disabled = false; }
+  });
+  outputBox.append(copyButton, node('pre', 'tool-output-text', output || '暂无输出')); body.append(outputBox);
+  if (entry.output_truncated) { const full = node('a', 'tool-copy', '输出较长，下载完整输出'); full.href = outputPath; body.append(full); }
   detail.append(summary, body); return detail;
 }
 function messageEntry(entry) {
@@ -151,10 +167,9 @@ function renderConversation(toBottom = false) {
   const session = data.session;
   $('welcome').hidden = true; $('conversation').hidden = false; $('top-actions').hidden = false;
   $('project-label').textContent = session.project; $('project-label').title = session.cwd;
-  $('breadcrumb-title').textContent = session.title; $('session-title').textContent = session.title; $('session-title').title = session.title;
+  $('breadcrumb-title').textContent = session.title; $('breadcrumb-title').title = session.title;
   $('model-label').textContent = session.model.replace(/^deepseek-v/i, 'DeepSeek V').replace(/-flash$/i, ' Flash');
   $('status-label').textContent = states[session.status] || session.status; $('status-label').className = `state-chip ${session.status}`;
-  $('source-label').textContent = 'MCP 会话';
   $('created-label').textContent = `${day(session.created_at)} ${time(session.created_at)}`;
   $('turns-label').textContent = `${session.user_turns} 轮对话 · ${session.tool_calls} 次工具执行`;
   $('pin-button').classList.toggle('active', session.pinned); $('pin-button').title = session.pinned ? '取消置顶' : '置顶会话';
@@ -166,9 +181,6 @@ function renderConversation(toBottom = false) {
   for (const entry of data.entries) fragment.append(entry.kind === 'tool' ? toolEntry(entry, opened) : messageEntry(entry));
   if (!data.entries.length) fragment.append(node('p', 'empty-nav', isActive(session.status) ? 'DeepSeek 已接收任务，正在等待第一条记录…' : '此会话暂未找到消息记录。'));
   $('transcript').replaceChildren(fragment);
-  const ending = $('session-ending'); ending.className = `session-ending${isActive(session.status) ? ' running' : ''}`;
-  ending.replaceChildren(node('span', 'status-dot'), document.createTextNode(isActive(session.status) ? '子代理正在执行任务' : data.earlier_cursor === null ? '已展示当前会话的全部记录' : '已展示当前会话的最新记录'));
-  $('sync-label').textContent = isActive(session.status) ? '正在同步子代理的执行进度' : '已同步 · 记录保存在本机';
   document.title = `${session.title} · 子代理会话`;
   requestAnimationFrame(() => { scroll.scrollTop = toBottom || nearBottom ? scroll.scrollHeight : previousTop; checkScroll(); });
 }
@@ -186,7 +198,6 @@ async function loadList() {
       history.replaceState(null, '', location.pathname + location.search);
       $('conversation').hidden = true; $('top-actions').hidden = true; $('welcome').hidden = false;
       $('project-label').textContent = '子代理会话'; $('breadcrumb-title').textContent = '会话记录';
-      $('sync-label').textContent = '会话记录保存在本机';
       document.title = '子代理会话 · Subagent';
       renderNavigation();
       if (sessions.length) select(sessions[0].id);
@@ -244,7 +255,6 @@ $('refresh-button').addEventListener('click', () => { etag = null; void refresh(
 $('theme-toggle').addEventListener('click', () => { const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = theme; localStorage.setItem('subagent-theme', theme); });
 $('sidebar-toggle').addEventListener('click', () => { $('app').classList.toggle(innerWidth <= 760 ? 'mobile-open' : 'sidebar-collapsed'); });
 $('sidebar-backdrop').addEventListener('click', () => $('app').classList.remove('mobile-open'));
-$('auto-refresh').addEventListener('click', () => { automatic = !automatic; $('auto-refresh').classList.toggle('active', automatic); $('auto-refresh').setAttribute('aria-pressed', String(automatic)); if (automatic) void refresh(); });
 $('jump-bottom').addEventListener('click', () => { $('conversation-scroll').scrollTo({ top: $('conversation-scroll').scrollHeight, behavior: 'smooth' }); });
 $('conversation-scroll').addEventListener('scroll', checkScroll, { passive: true });
 $('load-earlier').addEventListener('click', async () => {
@@ -276,7 +286,7 @@ $('info-button').addEventListener('click', () => {
 document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); if (innerWidth <= 760) $('app').classList.add('mobile-open'); $('search').focus(); } });
 window.addEventListener('hashchange', fromHash);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && automatic) void refresh(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(); });
 fromHash();
 void refresh();
-setInterval(() => { if (automatic && !document.hidden) void refresh(); }, 2500);
+setInterval(() => { if (!document.hidden) void refresh(); }, 2500);

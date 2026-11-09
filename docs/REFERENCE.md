@@ -10,7 +10,17 @@ Open `http://127.0.0.1:43187`. The page groups conversations by working director
 
 ## Model settings
 
-Open `http://127.0.0.1:43187/#/settings/models`, or choose **模型与连接** in the sidebar. Add a local deployment, direct API or router; select Responses API or OpenAI-compatible Chat Completions; enter the API base URL, authentication, model IDs and a default model. Ollama, LM Studio and vLLM quick-fill options are provided. The service must expose the selected compatible API, and the model must support function/tool calling for agent work. Native Anthropic Messages and other protocols require a compatible external gateway.
+Reasoning settings accept raw effort values rather than a fixed low/medium/high enum. Connection defaults can be replaced by a complete `model_reasoning[model_id]` object; an empty object explicitly omits all reasoning controls for that model. Missing overrides inherit the connection settings. Old `reasoning_effort` values remain connection defaults.
+
+The standard `effort` format sends `reasoning.effort` (Responses) or `reasoning_effort` (Chat); a `disabled` mode sends `none`. The optional `thinking` extension sends `thinking.type` and `thinking.budget_tokens`, with effort using the selected protocol's field. The optional `reasoning` extension sends `reasoning.enabled` and either `reasoning.effort` or `reasoning.max_tokens`. These extensions require explicit support from the upstream compatible service. There is no native Anthropic/Gemini transport. The UI previews parameters and optionally shows effort metadata from model discovery without applying it automatically.
+
+The gateway applies settings for each request's actual model and removes inherited CLI effort, including when the configured effort is blank. Raw effort values are not passed as CLI execution modes. Profile exports use the same gateway settings. Reconnect MCP once after upgrading to load the revised child startup logic.
+
+Connection types are **Model API connection** and **Existing Codex profile**. API addresses, protocols, authentication and model IDs are entered manually. Existing profile names can be referenced without editing their files. Legacy `local` and `router` records retain their IDs and route fingerprints when edited in the new UI.
+
+API connections can optionally export a Codex CLI 0.134.0+ `<name>.config.toml` file. The preview includes the target path and terminal startup commands; it does not install or overwrite user files. The exported profile uses the same local gateway/provider definition as managed tasks. No upstream keys or local gateway tokens are embedded. The commands start the gateway and read its token from the local state directory. Keep that connection and gateway available, and re-export after endpoint/protocol/auth-mode changes. Manually launched CLI sessions are outside the MCP job registry and do not appear in this viewer.
+
+Open `http://127.0.0.1:43187/#/settings/models`, or choose **模型与连接** in the sidebar. Add a local deployment, direct API or router; select Responses API or OpenAI-compatible Chat Completions; enter the API base URL, authentication, model IDs and a default model. The service must expose the selected compatible API, and the model must support function/tool calling for agent work. Native Anthropic Messages and other protocols require a compatible external gateway.
 
 Model discovery is optional: fetch `/models` and add only the models you want, or enter model IDs manually. **Save and test** sends a small inference request and verifies stream completion and function calling; that request can count toward the upstream provider's usage. Existing-profile checks do not make an inference request.
 

@@ -9,6 +9,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { ModelStore } from './model-store.mjs';
+import { managedConfig, tomlValue } from './model-config.mjs';
 
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const ACTIVE = new Set(['running', 'cancelling']);
@@ -241,22 +242,8 @@ export class JobManager {
     ];
     const childEnv = { ...this.env, CODEX_SUBAGENT_DEPTH: String(this.depth + 1) };
     if (managed) {
-      const provider = 'subagent_gateway';
-      const overrides = {
-        model_provider: provider,
-        [`model_providers.${provider}.name`]: 'Subagent model gateway',
-        [`model_providers.${provider}.base_url`]: `http://127.0.0.1:${gatewayPort}/inference/${connection.id}/v1`,
-        [`model_providers.${provider}.wire_api`]: 'responses',
-        [`model_providers.${provider}.env_key`]: 'SUBAGENT_GATEWAY_TOKEN',
-        [`model_providers.${provider}.requires_openai_auth`]: false,
-        [`model_providers.${provider}.supports_websockets`]: false,
-        [`model_providers.${provider}.capabilities.remote_compaction`]: 'unsupported',
-        web_search: 'disabled',
-      };
-      if (connection.context_window) overrides.model_context_window = connection.context_window;
-      if (connection.reasoning_effort) overrides.model_reasoning_effort = connection.reasoning_effort;
-      for (const [key, value] of Object.entries(overrides)) argv.push('-c', `${key}=${JSON.stringify(value)}`);
-      argv.push('-c', `model_providers.${provider}.http_headers={"X-Subagent-Route-Hash"=${JSON.stringify(job.connection_fingerprint)}}`);
+      const overrides = managedConfig(connection, { baseUrl: `http://127.0.0.1:${gatewayPort}`, fingerprint: job.connection_fingerprint });
+      for (const [key, value] of Object.entries(overrides)) argv.push('-c', `${key}=${tomlValue(value)}`);
       childEnv.SUBAGENT_GATEWAY_TOKEN = gatewayToken;
     }
     if (parent) argv.push('resume', job.session_id);

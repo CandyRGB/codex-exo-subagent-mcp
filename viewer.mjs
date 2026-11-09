@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 import { SessionRepository } from './history.mjs';
 import { ModelStore, safeError } from './model-store.mjs';
 import { ModelGateway, readJSON } from './model-gateway.mjs';
+import { exportProfile } from './profile-export.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_PORT = 43187;
@@ -41,15 +42,17 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
       const inference = url.pathname.match(/^\/inference\/([A-Za-z0-9_-]+)\/v1\/responses$/);
       if (inference && request.method === 'POST') { await gateway.handle(request, response, inference[1]); return; }
       if (url.pathname === '/api/config' && request.method === 'GET') { send(200, store.publicConfig()); return; }
+      if (url.pathname === '/reasoning.js' && request.method === 'GET') { send(200, readFileSync(join(root, 'reasoning.mjs')), 'text/javascript; charset=utf-8'); return; }
       if (url.pathname === '/api/config/connections' && request.method === 'POST') { send(200, store.save(await readJSON(request))); return; }
       if (url.pathname === '/api/config/default' && request.method === 'PATCH') { const body = await readJSON(request); send(200, store.setDefault(body.connection_id, body.model)); return; }
       if (url.pathname === '/api/config/discover' && request.method === 'POST') { const body = await readJSON(request); send(200, await gateway.discover(body.connection, body.connection_id || null)); return; }
-      const connectionRoute = url.pathname.match(/^\/api\/config\/connections\/([A-Za-z0-9_-]+)(\/test)?$/);
+      const connectionRoute = url.pathname.match(/^\/api\/config\/connections\/([A-Za-z0-9_-]+)(\/(?:test|export-profile))?$/);
       if (connectionRoute) {
         const id = connectionRoute[1];
         if (request.method === 'PUT' && !connectionRoute[2]) { send(200, store.save(await readJSON(request), id)); return; }
         if (request.method === 'DELETE' && !connectionRoute[2]) { send(200, store.remove(id)); return; }
-        if (request.method === 'POST' && connectionRoute[2]) { const body = await readJSON(request); send(200, await gateway.probe(id, body.model)); return; }
+        if (request.method === 'POST' && connectionRoute[2] === '/export-profile') { send(200, exportProfile({ store, id, baseUrl: `http://${host}:${boundPort}`, codexHome, moduleDir: root })); return; }
+        if (request.method === 'POST' && connectionRoute[2] === '/test') { const body = await readJSON(request); send(200, await gateway.probe(id, body.model)); return; }
       }
       if (request.method === 'GET' && url.pathname === '/api/sessions') {
         const sessions = await repository.list();
@@ -81,7 +84,7 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
         const result = await repository.update(decodeURIComponent(match[1]), JSON.parse(body));
         send(200, result); return;
       }
-      const staticFiles = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/settings.js': ['settings.js', 'text/javascript; charset=utf-8'], '/settings.css': ['settings.css', 'text/css; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
+      const staticFiles = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/tool-output.js': ['tool-output.js', 'text/javascript; charset=utf-8'], '/settings.js': ['settings.js', 'text/javascript; charset=utf-8'], '/settings.css': ['settings.css', 'text/css; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
       if (request.method === 'GET' && staticFiles[url.pathname]) {
         const [file, type] = staticFiles[url.pathname];
         send(200, readFileSync(join(root, 'web', file)), type); return;

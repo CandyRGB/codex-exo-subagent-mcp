@@ -1,11 +1,13 @@
+import { applyReasoning, normalizeReasoning } from './reasoning.js';
 const $ = id => document.getElementById(id);
 const el = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
-const kinds = { profile: '现有配置', local: '本地部署', api: '直连 API', router: '代理路由' };
+const kinds = { profile: '已有 Codex profile', local: '模型 API 连接', api: '模型 API 连接', router: '模型 API 连接' };
 const protocols = { profile: 'Codex profile', responses: 'Responses', chat_completions: 'Chat Completions' };
 const modelsOf = () => [...new Set($('connection-models').value.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean))];
 
 export function createModelSettings({ toast, onSaved = () => {} }) {
-  let config = null, editingId = null, pendingDelete = null, busy = false;
+  let config = null, editingId = null, pendingDelete = null, busy = false, exported = null;
+  let reasoningDefaults = {}, modelReasoning = Object.create(null), reasoningScope = '', discoveredCapabilities = {};
   async function api(path, options = {}) {
     const r = await fetch(path, { ...options, signal: options.signal || AbortSignal.timeout(60000) });
     const data = await r.json(); if (!r.ok) throw new Error(data.error || '模型配置操作失败'); return data;
@@ -14,48 +16,95 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   function result(message = '', ok = true) { const target = $('connection-test-result'); target.hidden = !message; target.textContent = message; target.className = `connection-test-result${ok ? ' success' : ' error'}`; }
   function busyState(value) {
     busy = value;
-    for (const id of ['save-connection', 'save-test-connection', 'discover-models', 'new-connection']) $(id).disabled = value;
+    for (const id of ['save-connection', 'save-test-connection', 'discover-models', 'new-connection', 'export-connection']) $(id).disabled = value;
     $('save-connection').textContent = value ? '正在处理…' : '保存连接';
   }
   function syncModels(selected = $('connection-default-model').value) {
+    saveReasoningScope();
     const models = modelsOf(); $('connection-default-model').replaceChildren();
     for (const model of models) { const option = el('option', '', model); option.value = model; $('connection-default-model').append(option); }
     $('connection-default-model').value = models.includes(selected) ? selected : models[0] || '';
+    $('reasoning-scope').replaceChildren();
+    const base = el('option', '', '连接默认值'); base.value = ''; $('reasoning-scope').append(base);
+    for (const model of models) { const option = el('option', '', model); option.value = model; $('reasoning-scope').append(option); }
+    if (!models.includes(reasoningScope)) reasoningScope = '';
+    $('reasoning-scope').value = reasoningScope; loadReasoningScope();
+  }
+  function readReasoningFields() {
+    return { reasoning_effort: $('connection-reasoning').value.trim(), thinking_format: $('connection-thinking-format').value,
+      thinking_mode: $('connection-thinking-mode').value.trim(), thinking_budget: $('connection-thinking-budget').value };
+  }
+  function saveReasoningScope() {
+    if (!reasoningScope) reasoningDefaults = readReasoningFields();
+    else if ($('reasoning-model-override').checked) modelReasoning[reasoningScope] = readReasoningFields();
+    else delete modelReasoning[reasoningScope];
+  }
+  function previewReasoning() {
+    try {
+      const settings = normalizeReasoning(readReasoningFields());
+      const parameters = applyReasoning({ model: '__preview' }, settings, $('connection-protocol').value); delete parameters.model;
+      $('reasoning-request-preview').textContent = JSON.stringify(parameters, null, 2);
+    } catch (error) { $('reasoning-request-preview').textContent = error.message; }
+    const capability = discoveredCapabilities[reasoningScope || $('connection-default-model').value];
+    $('connection-effort-options').replaceChildren();
+    for (const effort of capability?.efforts || []) { const option = el('option'); option.value = effort; $('connection-effort-options').append(option); }
+    $('reasoning-capability-hint').textContent = capability?.efforts?.length
+      ? `服务声明的思考档位：${capability.efforts.join(' / ')}${capability.default_effort ? `；默认 ${capability.default_effort}` : ''}。仅供参考，也可手填其他原始值。`
+      : '留空不发送强度；none 与留空含义不同。支持值取决于实际模型和服务。';
+  }
+  function loadReasoningScope() {
+    const independent = Boolean(reasoningScope && Object.hasOwn(modelReasoning, reasoningScope));
+    const settings = independent ? modelReasoning[reasoningScope] : reasoningDefaults;
+    $('reasoning-override-field').hidden = !reasoningScope;
+    $('reasoning-model-override').checked = independent;
+    $('connection-reasoning').value = settings.reasoning_effort || '';
+    $('connection-thinking-format').value = settings.thinking_format || 'effort';
+    $('connection-thinking-mode').value = settings.thinking_mode || '';
+    $('connection-thinking-budget').value = settings.thinking_budget ?? '';
+    $('reasoning-settings-fields').disabled = $('connection-kind').value === 'profile' || Boolean(reasoningScope && !independent);
+    previewReasoning();
   }
   function syncFields() {
     const profile = $('connection-kind').value === 'profile'; const auth = $('connection-auth').value;
     $('endpoint-fields').hidden = profile; $('profile-fields').hidden = !profile;
     $('connection-advanced').hidden = profile;
     $('connection-base-url').required = !profile;
+    $('connection-profile').required = profile;
+    $('connection-profile').disabled = !profile;
+    for (const field of $('endpoint-fields').querySelectorAll('input, select')) field.disabled = profile;
+    for (const field of $('connection-advanced').querySelectorAll('input, select')) field.disabled = profile;
     $('stored-auth-field').hidden = auth !== 'stored'; $('env-auth-field').hidden = auth !== 'env';
     $('connection-env-var').required = !profile && auth === 'env';
     const existing = config?.connections.find(c => c.id === editingId);
     $('connection-api-key').required = !profile && auth === 'stored' && !existing?.has_api_key;
     $('discover-models').hidden = profile;
     $('save-test-connection').textContent = profile ? '保存并检查' : '保存并测试';
-    $('connection-test-hint').textContent = profile ? '此连接沿用已有 Codex 配置，检查不会调用模型。' : '连接测试会发送一条小型模型请求，可能计入该服务的用量。';
+    $('connection-test-hint').textContent = profile ? '此连接沿用已有 Codex 配置，检查不会调用模型。' : '连接测试使用默认模型及其思考设置，可能计入该服务的用量。';
+    $('reasoning-settings-fields').disabled = profile || Boolean(reasoningScope && !$('reasoning-model-override').checked);
   }
   function draft() {
+    saveReasoningScope();
     return {
-      name: $('connection-name').value.trim(), kind: $('connection-kind').value,
+      name: $('connection-name').value.trim(), kind: $('connection-kind').value === 'profile' ? 'profile' : config?.connections.find(c => c.id === editingId)?.kind || 'api',
+      profile: $('connection-profile').value.trim(),
       protocol: $('connection-protocol').value, base_url: $('connection-base-url').value.trim(),
       auth_mode: $('connection-auth').value, api_key: $('connection-api-key').value,
       api_key_env: $('connection-env-var').value.trim(), auth_header: $('connection-auth-header').value.trim(),
       models: modelsOf(), default_model: $('connection-default-model').value,
-      context_window: $('connection-context-window').value, reasoning_effort: $('connection-reasoning').value,
+      context_window: $('connection-context-window').value, ...reasoningDefaults,
+      model_reasoning: Object.fromEntries(Object.entries(modelReasoning).filter(([model]) => modelsOf().includes(model))),
       enabled: $('connection-enabled').checked,
     };
   }
   function populate(connection = null) {
+    if (editingId !== connection?.id) discoveredCapabilities = {};
     editingId = connection?.id || null;
     $('connection-editor-title').textContent = connection ? '编辑连接' : '添加模型连接';
-    $('connection-editor-hint').textContent = connection?.kind === 'profile' ? '已保留当前可用路由。也可以新增完全独立的模型服务。' : '保存后即可让 Codex 的子代理使用此连接。';
+    $('connection-editor-hint').textContent = connection?.kind === 'profile' ? '直接使用本机已有 profile 启动子代理。' : '本地服务、远程 API 和代理路由使用同一套连接设置。保存后，子 CLI 通过临时参数使用此连接。';
     $('connection-form').reset();
     $('connection-name').value = connection?.name || '';
-    $('connection-kind').querySelector('option[value="profile"]').disabled = connection?.kind !== 'profile';
-    $('connection-kind').value = connection?.kind || 'api';
-    $('connection-kind').disabled = connection?.kind === 'profile';
-    $('connection-preset').disabled = connection?.kind === 'profile';
+    $('connection-kind').value = connection?.kind === 'profile' ? 'profile' : 'api';
+    $('connection-kind').disabled = Boolean(connection);
     $('connection-protocol').value = connection?.protocol === 'chat_completions' ? 'chat_completions' : 'responses';
     $('connection-base-url').value = connection?.base_url || '';
     $('connection-auth').value = connection?.auth_mode || 'none';
@@ -65,11 +114,15 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('connection-api-key').type = 'password'; $('show-api-key').checked = false;
     $('connection-env-var').value = connection?.api_key_env || '';
     $('connection-auth-header').value = connection?.auth_header || 'Authorization';
+    reasoningDefaults = { reasoning_effort: connection?.reasoning_effort || '', thinking_format: connection?.thinking_format || 'effort', thinking_mode: connection?.thinking_mode || '', thinking_budget: connection?.thinking_budget ?? '' };
+    modelReasoning = Object.assign(Object.create(null), connection?.model_reasoning || {}); reasoningScope = '';
+    loadReasoningScope();
     $('connection-models').value = (connection?.models || []).join('\n'); syncModels(connection?.default_model);
     $('connection-context-window').value = connection?.context_window || '';
-    $('connection-reasoning').value = connection?.reasoning_effort || '';
     $('connection-enabled').checked = connection?.enabled !== false;
-    $('profile-label').textContent = connection?.profile || '';
+    $('connection-profile').value = connection?.profile || '';
+    $('export-connection').hidden = !connection || connection.kind === 'profile';
+    $('export-connection').title = '导出已保存的配置；未保存的修改不包含在内';
     $('remove-connection').hidden = !connection;
     $('remove-connection').disabled = connection?.id === config?.default_connection_id;
     $('remove-connection').title = connection?.id === config?.default_connection_id ? '先选择另一个默认连接，才能移除此连接' : '移除模型连接';
@@ -125,30 +178,19 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   $('save-test-connection').addEventListener('click', () => { void save(true); });
   $('new-connection').addEventListener('click', () => { if (!busy) { populate(); $('connection-name').focus(); } });
   $('connection-models').addEventListener('input', () => syncModels());
+  $('reasoning-scope').addEventListener('change', () => { saveReasoningScope(); reasoningScope = $('reasoning-scope').value; loadReasoningScope(); });
+  $('reasoning-model-override').addEventListener('change', () => { saveReasoningScope(); loadReasoningScope(); });
+  for (const id of ['connection-reasoning', 'connection-thinking-format', 'connection-thinking-mode', 'connection-thinking-budget', 'connection-protocol', 'connection-default-model']) $(id).addEventListener('input', previewReasoning);
   $('connection-auth').addEventListener('change', syncFields);
   $('connection-kind').addEventListener('change', syncFields);
   $('show-api-key').addEventListener('change', () => { $('connection-api-key').type = $('show-api-key').checked ? 'text' : 'password'; });
-  $('connection-preset').addEventListener('change', () => {
-    const preset = $('connection-preset').value;
-    if (preset === 'custom') return;
-    const choices = {
-      ollama: { name: '本地 Ollama', kind: 'local', protocol: 'chat_completions', base_url: 'http://127.0.0.1:11434/v1' },
-      lmstudio: { name: '本地 LM Studio', kind: 'local', protocol: 'chat_completions', base_url: 'http://127.0.0.1:1234/v1' },
-      vllm: { name: '本地 vLLM', kind: 'local', protocol: 'chat_completions', base_url: 'http://127.0.0.1:8000/v1' },
-      responses: { name: 'Responses API', kind: 'api', protocol: 'responses', base_url: 'https://api.openai.com/v1' },
-      router: { name: '我的模型路由', kind: 'router', protocol: 'chat_completions', base_url: '' },
-    };
-    const chosen = choices[preset]; if (!chosen) return;
-    $('connection-name').value ||= chosen.name;
-    $('connection-kind').value = chosen.kind; $('connection-protocol').value = chosen.protocol; $('connection-base-url').value = chosen.base_url;
-    $('connection-auth').value = chosen.kind === 'local' ? 'none' : config.secret_storage_supported ? 'stored' : 'env'; syncFields();
-  });
   $('discover-models').addEventListener('click', async () => {
     if (busy) return;
     const input = draft(); if (!input.name) input.name = '未命名连接';
     busyState(true); result('正在读取此接口的模型列表…');
     try {
       const discovered = await api('/api/config/discover', { method: 'POST', ...payload({ connection: input, connection_id: editingId }) });
+      discoveredCapabilities = discovered.capabilities || {}; previewReasoning();
       const options = document.createDocumentFragment(); for (const model of discovered.models) { const option = el('option'); option.value = model; options.append(option); }
       $('discovered-model-list').replaceChildren(options); $('discovered-models-wrap').hidden = false;
       result(`已读取 ${discovered.models.length} 个模型。选择所需模型并添加到列表，也可以手动填写。`);
@@ -157,6 +199,22 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   $('add-discovered-model').addEventListener('click', () => {
     const model = $('discovered-model-input').value.trim(); if (!model) return;
     $('connection-models').value = [...new Set([...modelsOf(), model])].join('\n'); syncModels(); $('discovered-model-input').value = '';
+  });
+  $('export-connection').addEventListener('click', async () => {
+    if (!editingId || busy) return;
+    busyState(true);
+    try {
+      exported = await api(`/api/config/connections/${editingId}/export-profile`, { method: 'POST' });
+      for (const field of ['note', 'target', 'content', 'launch']) $(`export-profile-${field}`).textContent = exported[field];
+      $('export-profile-dialog').showModal();
+    } catch (error) { toast(error.message); }
+    finally { busyState(false); }
+  });
+  $('download-profile').addEventListener('click', () => {
+    if (!exported) return;
+    const url = URL.createObjectURL(new Blob([exported.content], { type: 'text/plain;charset=utf-8' }));
+    const link = el('a'); link.href = url; link.download = exported.filename;
+    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   $('remove-connection').addEventListener('click', () => { if (!editingId || busy) return; pendingDelete = editingId; $('delete-connection-dialog').showModal(); });
   $('confirm-remove-connection').addEventListener('click', async () => {
