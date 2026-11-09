@@ -1,13 +1,15 @@
 import { applyReasoning, normalizeReasoning } from './reasoning.js';
+import { ModelSelection } from './model-selection.js';
 const $ = id => document.getElementById(id);
 const el = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
 const kinds = { profile: '已有 Codex profile', local: '模型 API 连接', api: '模型 API 连接', router: '模型 API 连接' };
 const protocols = { profile: 'Codex profile', responses: 'Responses', chat_completions: 'Chat Completions' };
-const modelsOf = () => [...new Set($('connection-models').value.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean))];
 
 export function createModelSettings({ toast, onSaved = () => {} }) {
   let config = null, editingId = null, pendingDelete = null, busy = false, exported = null;
   let reasoningDefaults = {}, modelReasoning = Object.create(null), reasoningScope = '', discoveredCapabilities = {};
+  let selection = new ModelSelection(), discoveredModels = [], savedSignature = '';
+  const modelsOf = () => selection.models;
   async function api(path, options = {}) {
     const r = await fetch(path, { ...options, signal: options.signal || AbortSignal.timeout(60000) });
     const data = await r.json(); if (!r.ok) throw new Error(data.error || '模型配置操作失败'); return data;
@@ -16,19 +18,42 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   function result(message = '', ok = true) { const target = $('connection-test-result'); target.hidden = !message; target.textContent = message; target.className = `connection-test-result${ok ? ' success' : ' error'}`; }
   function busyState(value) {
     busy = value;
-    for (const id of ['save-connection', 'save-test-connection', 'discover-models', 'new-connection', 'export-connection']) $(id).disabled = value;
+    for (const id of ['save-connection', 'test-connection', 'discover-models', 'new-connection', 'export-connection', 'add-model']) $(id).disabled = value;
+    $('test-connection').disabled = value || !editingId;
     $('save-connection').textContent = value ? '正在处理…' : '保存连接';
   }
-  function syncModels(selected = $('connection-default-model').value) {
-    saveReasoningScope();
-    const models = modelsOf(); $('connection-default-model').replaceChildren();
-    for (const model of models) { const option = el('option', '', model); option.value = model; $('connection-default-model').append(option); }
-    $('connection-default-model').value = models.includes(selected) ? selected : models[0] || '';
-    $('reasoning-scope').replaceChildren();
-    const base = el('option', '', '连接默认值'); base.value = ''; $('reasoning-scope').append(base);
-    for (const model of models) { const option = el('option', '', model); option.value = model; $('reasoning-scope').append(option); }
-    if (!models.includes(reasoningScope)) reasoningScope = '';
-    $('reasoning-scope').value = reasoningScope; loadReasoningScope();
+  function renderModels() {
+    const rows = document.createDocumentFragment();
+    const candidates = discoveredModels.filter(model => !modelsOf().includes(model));
+    for (const model of [...modelsOf(), ...candidates]) {
+      const added = modelsOf().includes(model); const row = el('tr', reasoningScope === model ? 'model-row-selected' : '');
+      const name = el('td'); name.append(el('code', '', model)); if (!added) name.append(el('span', 'model-candidate', '未添加'));
+      const chosen = el('td');
+      if (added) {
+        const radio = el('input'); radio.type = 'radio'; radio.name = 'default-model'; radio.checked = model === selection.defaultModel;
+        radio.setAttribute('aria-label', `将 ${model} 设为默认模型`);
+        radio.addEventListener('change', () => { if (busy) return; selection.setDefault(model); renderModels(); previewReasoning(); }); const hit = el('label', 'model-default-hit'); hit.append(radio); chosen.append(hit);
+      }
+      const actions = el('td'); const group = el('div', 'model-row-actions');
+      if (added) {
+        if ($('connection-kind').value !== 'profile') {
+          const thinking = el('button', 'text-button', '思考设置'); thinking.type = 'button'; thinking.setAttribute('aria-label', `编辑 ${model} 的思考设置`);
+          thinking.addEventListener('click', () => { if (busy) return; saveReasoningScope(); reasoningScope = model; loadReasoningScope(); renderModels(); $('connection-advanced').open = true; $('reasoning-scope-label').scrollIntoView({ block: 'nearest' }); }); group.append(thinking);
+        }
+        const remove = el('button', 'model-remove', '移除'); remove.type = 'button'; remove.setAttribute('aria-label', `移除模型 ${model}`);
+        remove.addEventListener('click', () => { if (busy) return; saveReasoningScope(); selection.remove(model); if (reasoningScope === model) reasoningScope = ''; loadReasoningScope(); renderModels(); }); group.append(remove);
+      } else {
+        const add = el('button', 'text-button', '添加'); add.type = 'button'; add.setAttribute('aria-label', `添加模型 ${model}`);
+        add.addEventListener('click', () => { if (busy) return; try { selection.add(model); renderModels(); previewReasoning(); } catch (error) { result(error.message, false); } }); group.append(add);
+      }
+      actions.append(group); row.append(name, chosen, actions); rows.append(row);
+    }
+    if (!modelsOf().length && !candidates.length) { const row = el('tr'); const cell = el('td', 'empty-models', '填写模型 ID，或获取模型列表后添加。'); cell.colSpan = 3; row.append(cell); rows.append(row); }
+    $('model-rows').replaceChildren(rows);
+  }
+  function commitModelInput() {
+    const value = $('model-id-input').value.trim(); if (!value) return;
+    selection.add(value); $('model-id-input').value = ''; renderModels(); previewReasoning();
   }
   function readReasoningFields() {
     return { reasoning_effort: $('connection-reasoning').value.trim(), thinking_format: $('connection-thinking-format').value,
@@ -45,7 +70,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       const parameters = applyReasoning({ model: '__preview' }, settings, $('connection-protocol').value); delete parameters.model;
       $('reasoning-request-preview').textContent = JSON.stringify(parameters, null, 2);
     } catch (error) { $('reasoning-request-preview').textContent = error.message; }
-    const capability = discoveredCapabilities[reasoningScope || $('connection-default-model').value];
+    const capability = discoveredCapabilities[reasoningScope || selection.defaultModel];
     $('connection-effort-options').replaceChildren();
     for (const effort of capability?.efforts || []) { const option = el('option'); option.value = effort; $('connection-effort-options').append(option); }
     $('reasoning-capability-hint').textContent = capability?.efforts?.length
@@ -55,6 +80,8 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   function loadReasoningScope() {
     const independent = Boolean(reasoningScope && Object.hasOwn(modelReasoning, reasoningScope));
     const settings = independent ? modelReasoning[reasoningScope] : reasoningDefaults;
+    $('reasoning-scope-label').textContent = reasoningScope ? `${reasoningScope} 的思考设置` : '连接默认思考设置';
+    $('reasoning-defaults').hidden = !reasoningScope;
     $('reasoning-override-field').hidden = !reasoningScope;
     $('reasoning-model-override').checked = independent;
     $('connection-reasoning').value = settings.reasoning_effort || '';
@@ -78,9 +105,10 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     const existing = config?.connections.find(c => c.id === editingId);
     $('connection-api-key').required = !profile && auth === 'stored' && !existing?.has_api_key;
     $('discover-models').hidden = profile;
-    $('save-test-connection').textContent = profile ? '保存并检查' : '保存并测试';
+    $('test-connection').textContent = profile ? '检查配置' : '测试连接';
     $('connection-test-hint').textContent = profile ? '此连接沿用已有 Codex 配置，检查不会调用模型。' : '连接测试使用默认模型及其思考设置，可能计入该服务的用量。';
     $('reasoning-settings-fields').disabled = profile || Boolean(reasoningScope && !$('reasoning-model-override').checked);
+    renderModels();
   }
   function draft() {
     saveReasoningScope();
@@ -90,14 +118,20 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       protocol: $('connection-protocol').value, base_url: $('connection-base-url').value.trim(),
       auth_mode: $('connection-auth').value, api_key: $('connection-api-key').value,
       api_key_env: $('connection-env-var').value.trim(), auth_header: $('connection-auth-header').value.trim(),
-      models: modelsOf(), default_model: $('connection-default-model').value,
+      models: [...modelsOf()], default_model: selection.defaultModel,
       context_window: $('connection-context-window').value, ...reasoningDefaults,
       model_reasoning: Object.fromEntries(Object.entries(modelReasoning).filter(([model]) => modelsOf().includes(model))),
       enabled: $('connection-enabled').checked,
     };
   }
+  function signature() {
+    const input = draft(); const normalized = normalizeReasoning(input);
+    for (const field of ['reasoning_effort', 'thinking_format', 'thinking_mode', 'thinking_budget']) delete input[field];
+    input.model_reasoning = Object.fromEntries(Object.entries(input.model_reasoning).sort(([a], [b]) => a.localeCompare(b)).map(([model, settings]) => [model, normalizeReasoning(settings)]));
+    return JSON.stringify({ ...input, ...normalized, pending_models: $('model-id-input').value });
+  }
   function populate(connection = null) {
-    if (editingId !== connection?.id) discoveredCapabilities = {};
+    if (editingId !== connection?.id) { discoveredCapabilities = {}; discoveredModels = []; }
     editingId = connection?.id || null;
     $('connection-editor-title').textContent = connection ? '编辑连接' : '添加模型连接';
     $('connection-editor-hint').textContent = connection?.kind === 'profile' ? '直接使用本机已有 profile 启动子代理。' : '本地服务、远程 API 和代理路由使用同一套连接设置。保存后，子 CLI 通过临时参数使用此连接。';
@@ -115,24 +149,22 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('connection-env-var').value = connection?.api_key_env || '';
     $('connection-auth-header').value = connection?.auth_header || 'Authorization';
     reasoningDefaults = { reasoning_effort: connection?.reasoning_effort || '', thinking_format: connection?.thinking_format || 'effort', thinking_mode: connection?.thinking_mode || '', thinking_budget: connection?.thinking_budget ?? '' };
-    modelReasoning = Object.assign(Object.create(null), connection?.model_reasoning || {}); reasoningScope = '';
+    selection = new ModelSelection(connection || {}); modelReasoning = selection.overrides; reasoningScope = '';
     loadReasoningScope();
-    $('connection-models').value = (connection?.models || []).join('\n'); syncModels(connection?.default_model);
     $('connection-context-window').value = connection?.context_window || '';
     $('connection-enabled').checked = connection?.enabled !== false;
     $('connection-profile').value = connection?.profile || '';
     $('export-connection').hidden = !connection || connection.kind === 'profile';
     $('export-connection').title = '导出已保存的配置；未保存的修改不包含在内';
     $('remove-connection').hidden = !connection;
+    $('connection-more').hidden = !connection; $('connection-more').open = false;
     $('remove-connection').disabled = connection?.id === config?.default_connection_id;
     $('remove-connection').title = connection?.id === config?.default_connection_id ? '先选择另一个默认连接，才能移除此连接' : '移除模型连接';
-    $('discovered-models-wrap').hidden = true; result(); syncFields(); renderCards();
+    $('test-connection').disabled = !connection;
+    result(); syncFields(); renderCards(); savedSignature = signature();
   }
   function renderCards() {
     if (!config) return;
-    const chosen = config.connections.find(c => c.id === config.default_connection_id);
-    $('settings-default-name').textContent = chosen?.name || '尚未选择';
-    $('settings-default-model').textContent = chosen?.default_model || '—';
     $('connection-count').textContent = `${config.connections.length} 个连接`;
     $('remove-connection').disabled = editingId === config.default_connection_id;
     $('remove-connection').title = editingId === config.default_connection_id ? '先选择另一个默认连接，才能移除此连接' : '移除模型连接';
@@ -145,42 +177,44 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       else if (!connection.enabled) heading.append(el('span', 'disabled-badge', '已停用'));
       card.append(heading, el('div', 'connection-card-meta', `${kinds[connection.kind]} · ${protocols[connection.protocol]}`));
       if (connection.base_url) { const endpoint = el('div', 'connection-card-endpoint', connection.base_url); endpoint.title = connection.base_url; card.append(endpoint); }
-      const controls = el('div', 'connection-card-controls'); const models = el('select', 'connection-card-model'); models.setAttribute('aria-label', `${connection.name} 默认模型`);
-      for (const id of connection.models) { const option = el('option', '', id); option.value = id; models.append(option); } models.value = connection.default_model;
-      const button = el('button', 'set-default-button', '设为默认'); button.type = 'button';
-      const update = () => { button.disabled = !connection.enabled || connection.id === config.default_connection_id && models.value === connection.default_model; };
-      models.addEventListener('change', update); update();
+      const controls = el('div', 'connection-card-controls');
+      const button = el('button', 'set-default-button', '设为默认连接'); button.type = 'button'; button.disabled = !connection.enabled;
       button.addEventListener('click', async () => {
         if (busy) return;
-        try { config = await api('/api/config/default', { method: 'PATCH', ...payload({ connection_id: connection.id, model: models.value }) }); if (editingId === connection.id && modelsOf().includes(models.value)) $('connection-default-model').value = models.value; renderCards(); toast('新任务将使用所选默认模型'); onSaved(config); } catch (error) { toast(error.message); }
+        try { config = await api('/api/config/default', { method: 'PATCH', ...payload({ connection_id: connection.id, model: connection.default_model }) }); renderCards(); toast('新任务将使用所选连接'); onSaved(config); } catch (error) { toast(error.message); }
       });
-      controls.append(models, button); card.append(controls); fragment.append(card);
+      if (connection.id !== config.default_connection_id) { controls.append(button); card.append(controls); } fragment.append(card);
     }
     $('connections-list').replaceChildren(fragment);
   }
-  async function save(testConnection = false) {
+  async function save() {
     if (busy || !$('connection-form').reportValidity()) return;
+    try { commitModelInput(); if (!modelsOf().length) throw new Error('请至少添加一个模型。'); } catch (error) { result(error.message, false); $('model-id-input').focus(); return; }
     busyState(true); result();
     try {
       const input = draft(); const previousId = editingId;
       config = await api(previousId ? `/api/config/connections/${previousId}` : '/api/config/connections', { method: previousId ? 'PUT' : 'POST', ...payload(input) });
       const saved = previousId ? config.connections.find(c => c.id === previousId) : config.connections.at(-1);
       populate(saved); toast('模型连接已保存'); onSaved(config);
-      if (testConnection) {
-        result('正在验证接口、流式响应与工具调用…');
-        const check = await api(`/api/config/connections/${saved.id}/test`, { method: 'POST', ...payload({ model: saved.default_model }) });
-        result(`${check.message}${check.latency_ms ? ` 耗时 ${(check.latency_ms / 1000).toFixed(1)} 秒。` : ''}`, check.tool_calling !== false);
-      }
     } catch (error) { result(error.message, false); }
     finally { busyState(false); }
   }
+  async function testConnection() {
+    if (busy || !editingId) return;
+    try { if (signature() !== savedSignature) throw new Error(); } catch { result('有未保存的修改，请先保存后再测试。', false); return; }
+    busyState(true); result('正在检查已保存的连接…');
+    try {
+      const check = await api(`/api/config/connections/${editingId}/test`, { method: 'POST', ...payload({ model: selection.defaultModel }) });
+      result(`${check.message}${check.latency_ms ? ` 耗时 ${(check.latency_ms / 1000).toFixed(1)} 秒。` : ''}`, check.tool_calling !== false);
+    } catch (error) { result(error.message, false); } finally { busyState(false); }
+  }
   $('connection-form').addEventListener('submit', event => { event.preventDefault(); void save(); });
-  $('save-test-connection').addEventListener('click', () => { void save(true); });
+  $('test-connection').addEventListener('click', () => { void testConnection(); });
   $('new-connection').addEventListener('click', () => { if (!busy) { populate(); $('connection-name').focus(); } });
-  $('connection-models').addEventListener('input', () => syncModels());
-  $('reasoning-scope').addEventListener('change', () => { saveReasoningScope(); reasoningScope = $('reasoning-scope').value; loadReasoningScope(); });
+  $('add-model').addEventListener('click', () => { if (busy) return; try { commitModelInput(); } catch (error) { result(error.message, false); } });
+  $('reasoning-defaults').addEventListener('click', () => { saveReasoningScope(); reasoningScope = ''; loadReasoningScope(); renderModels(); });
   $('reasoning-model-override').addEventListener('change', () => { saveReasoningScope(); loadReasoningScope(); });
-  for (const id of ['connection-reasoning', 'connection-thinking-format', 'connection-thinking-mode', 'connection-thinking-budget', 'connection-protocol', 'connection-default-model']) $(id).addEventListener('input', previewReasoning);
+  for (const id of ['connection-reasoning', 'connection-thinking-format', 'connection-thinking-mode', 'connection-thinking-budget', 'connection-protocol']) $(id).addEventListener('input', previewReasoning);
   $('connection-auth').addEventListener('change', syncFields);
   $('connection-kind').addEventListener('change', syncFields);
   $('show-api-key').addEventListener('change', () => { $('connection-api-key').type = $('show-api-key').checked ? 'text' : 'password'; });
@@ -191,17 +225,13 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     try {
       const discovered = await api('/api/config/discover', { method: 'POST', ...payload({ connection: input, connection_id: editingId }) });
       discoveredCapabilities = discovered.capabilities || {}; previewReasoning();
-      const options = document.createDocumentFragment(); for (const model of discovered.models) { const option = el('option'); option.value = model; options.append(option); }
-      $('discovered-model-list').replaceChildren(options); $('discovered-models-wrap').hidden = false;
-      result(`已读取 ${discovered.models.length} 个模型。选择所需模型并添加到列表，也可以手动填写。`);
+      discoveredModels = discovered.models; renderModels();
+      result(`已读取 ${discovered.models.length} 个模型，候选项已列在下方；点击添加后才会保存。`);
     } catch (error) { result(error.message, false); } finally { busyState(false); }
-  });
-  $('add-discovered-model').addEventListener('click', () => {
-    const model = $('discovered-model-input').value.trim(); if (!model) return;
-    $('connection-models').value = [...new Set([...modelsOf(), model])].join('\n'); syncModels(); $('discovered-model-input').value = '';
   });
   $('export-connection').addEventListener('click', async () => {
     if (!editingId || busy) return;
+    $('connection-more').open = false;
     busyState(true);
     try {
       exported = await api(`/api/config/connections/${editingId}/export-profile`, { method: 'POST' });
@@ -216,7 +246,9 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     const link = el('a'); link.href = url; link.download = exported.filename;
     document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
-  $('remove-connection').addEventListener('click', () => { if (!editingId || busy) return; pendingDelete = editingId; $('delete-connection-dialog').showModal(); });
+  $('remove-connection').addEventListener('click', () => { if (!editingId || busy) return; $('connection-more').open = false; pendingDelete = editingId; $('delete-connection-dialog').showModal(); });
+  document.addEventListener('click', event => { if (!$('connection-more').contains(event.target)) $('connection-more').open = false; });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && $('connection-more').open) { $('connection-more').open = false; $('connection-more').querySelector('summary').focus(); } });
   $('confirm-remove-connection').addEventListener('click', async () => {
     if (!pendingDelete) return;
     try { config = await api(`/api/config/connections/${pendingDelete}`, { method: 'DELETE' }); pendingDelete = null; $('delete-connection-dialog').close(); populate(config.connections.find(c => c.id === config.default_connection_id)); toast('连接已移除'); onSaved(config); } catch (error) { toast(error.message); }

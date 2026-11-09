@@ -11,6 +11,7 @@ import { createViewer } from '../viewer.mjs';
 import { readJSON, sseJSON, responsesToChat } from '../model-gateway.mjs';
 import { managedConfig, tomlValue } from '../model-config.mjs';
 import { applyReasoning, effectiveReasoning, normalizeReasoning } from '../reasoning.mjs';
+import { documentFixture, eventually } from './dom-fixture.mjs';
 
 function fixture() { const stateDir = fileURLToPath(new URL(`../.test-runs/models-${randomUUID()}/`, import.meta.url)); mkdirSync(stateDir, { recursive: true }); return stateDir; }
 function save(store, extra = {}) {
@@ -49,6 +50,43 @@ test('configuration preserves the current profile and supports explicit defaults
   assert.throws(() => store.remove(c.id), /默认/);
   store.setDefault('current-profile', 'deepseek-v4.1-flash'); store.remove(c.id);
   assert.equal(store.read().connections.length, 1);
+});
+
+test('settings controller unifies models, preserves per-model drafts and tests only saved settings', async t => {
+  const store = new ModelStore({ stateDir: fixture() });
+  const c = save(store, { models: ['a', 'b'], default_model: 'a', reasoning_effort: 'high', model_reasoning: { b: { reasoning_effort: 'max' } } }); store.setDefault(c.id, 'a');
+  const v = await viewer(t, store); let probes = 0, saved = 0;
+  v.gateway.probe = async (id, model) => { probes++; return { ok: true, tool_calling: true, message: `TEST ${model}` }; };
+  v.gateway.discover = async () => ({ models: ['b', 'd'], capabilities: {} });
+  const originalFetch = globalThis.fetch, originalDocument = globalThis.document;
+  const document = documentFixture(readFileSync(fileURLToPath(new URL('../web/index.html', import.meta.url)), 'utf8'));
+  globalThis.document = document; globalThis.fetch = (url, options) => originalFetch(typeof url === 'string' && url.startsWith('/') ? v.url + url : url, options);
+  t.after(() => { globalThis.document = originalDocument; globalThis.fetch = originalFetch; });
+  let source = readFileSync(fileURLToPath(new URL('../web/settings.js', import.meta.url)), 'utf8');
+  source = source.replace('./reasoning.js', new URL('../reasoning.mjs', import.meta.url).href).replace('./model-selection.js', new URL('../web/model-selection.js', import.meta.url).href);
+  const { createModelSettings } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+  const settings = createModelSettings({ toast() {}, onSaved() { saved++; } }); await settings.show();
+  const $ = id => document.getElementById(id);
+  const action = label => $('model-rows').querySelectorAll('button').find(button => button.getAttribute('aria-label') === label);
+  assert.ok(!$('settings-load-error').textContent, $('settings-load-error').textContent);
+  assert.equal($('connections-list').querySelectorAll('select').length, 0);
+  await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 1);
+  await action('编辑 b 的思考设置').dispatch('click');
+  await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 2, 'Viewing model settings is not an edit');
+  $('connection-reasoning').value = 'provider:max';
+  await $('test-connection').dispatch('click'); assert.equal(probes, 2); assert.match($('connection-test-result').textContent, /未保存/);
+  const radio = $('model-rows').querySelectorAll('input').find(input => input.getAttribute('aria-label') === '将 b 设为默认模型'); radio.checked = true; await radio.dispatch('change');
+  $('model-id-input').value = 'c'; await $('add-model').dispatch('click');
+  await $('discover-models').dispatch('click'); await eventually(() => !$('save-connection').disabled);
+  await action('添加模型 d').dispatch('click');
+  await $('connection-form').dispatch('submit'); await eventually(() => saved === 1 && !$('save-connection').disabled);
+  assert.deepEqual(store.get(c.id).models, ['a', 'b', 'c', 'd']); assert.equal(store.get(c.id).default_model, 'b');
+  assert.equal(store.get(c.id).model_reasoning.b.reasoning_effort, 'provider:max'); assert.equal(probes, 2, 'Saving does not run inference');
+  await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 3); assert.match($('connection-test-result').textContent, /TEST b/);
+  await action('移除模型 b').dispatch('click');
+  await action('编辑 d 的思考设置').dispatch('click'); $('reasoning-model-override').checked = true; await $('reasoning-model-override').dispatch('change'); $('connection-reasoning').value = '';
+  await $('connection-form').dispatch('submit'); await eventually(() => saved === 2 && !$('save-connection').disabled);
+  assert.equal(store.get(c.id).default_model, 'a'); assert.equal(store.get(c.id).model_reasoning.b, undefined); assert.deepEqual(store.get(c.id).model_reasoning.d, {});
 });
 
 test('manual effort values and complete per-model overrides round-trip without changing legacy defaults', () => {

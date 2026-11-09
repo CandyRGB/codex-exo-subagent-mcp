@@ -9,7 +9,8 @@ import { get as httpGet } from 'node:http';
 import { SessionRepository, parseRollout } from '../history.mjs';
 import { createViewer } from '../viewer.mjs';
 import { JobManager } from '../runtime.mjs';
-import { commandOutput } from '../web/tool-output.js';
+import { commandOutput, coalesceTerminalEntries, completeCommandOutput } from '../web/tool-output.js';
+import { ModelSelection } from '../web/model-selection.js';
 
 function fixture() {
   const root = fileURLToPath(new URL(`../.test-runs/history-${randomUUID()}/`, import.meta.url));
@@ -175,4 +176,44 @@ test('command display removes transport metadata while preserving stdout and ord
   for (const text of ['Output:\n391', '普通输出\nProcess exited with code 0\nOutput:\n391', 'Chunk ID: printed-by-program\nnot metadata', '  原样保留\r\n']) assert.equal(commandOutput(text), text);
   assert.equal(commandOutput('Process exited with code 0\nOutput:\n'), '');
   assert.equal(commandOutput(null), '');
+});
+
+const terminal = (id, name, args, output) => ({ id, kind: 'tool', name, arguments: args, output, status: 'completed' });
+test('terminal polls fold into their command without losing output, failures or original records', async () => {
+  const root = terminal('entry-1', 'exec_command', { cmd: 'run' }, 'Process running with session ID 42\nOutput:\nhel');
+  const empty = terminal('entry-2', 'write_stdin', { session_id: 42, chars: '' }, 'Process running with session ID 42\nOutput:\n');
+  const output = terminal('entry-3', 'write_stdin', { session_id: 42, chars: '' }, 'Process exited with code 1\nOutput:\nlo\n');
+  const original = [root, empty, output]; const before = JSON.stringify(original);
+  const visible = coalesceTerminalEntries(original);
+  assert.equal(visible.length, 1); assert.equal(visible[0].display_output, 'hello\n');
+  assert.equal(visible[0].status, 'failed'); assert.equal(visible[0].exit_code, 1);
+  assert.equal(JSON.stringify(original), before);
+  assert.equal(await completeCommandOutput(visible[0], () => { throw Error('Unexpected fetch'); }), 'hello\n');
+  assert.equal(coalesceTerminalEntries([empty]).length, 0, 'Even without a loaded command an empty successful poll adds no card');
+  assert.equal(coalesceTerminalEntries([output]).length, 1, 'An orphan with real output or failure remains visible');
+});
+
+test('real terminal input remains separate and later polls attach after that input', async () => {
+  const entries = [
+    terminal('entry-0', 'exec_command', { cmd: 'interactive' }, 'Process running with session ID 7\nOutput:\nName?'),
+    terminal('entry-1', 'write_stdin', { session_id: 7, chars: 'Ada\n' }, 'Process running with session ID 7\nOutput:\nHello '),
+    terminal('entry-2', 'write_stdin', { session_id: 7, chars: '' }, 'Process exited with code 0\nOutput:\nAda!'),
+  ];
+  const visible = coalesceTerminalEntries(entries);
+  assert.equal(visible.length, 2); assert.equal(visible[0].display_output, 'Name?'); assert.equal(visible[1].arguments.chars, 'Ada\n');
+  assert.equal(visible[1].display_output, 'Hello Ada!'); assert.ok(visible.every(entry => entry.status === 'completed'));
+  visible[1].output_parts[1].output_truncated = true;
+  const requests = [];
+  assert.equal(await completeCommandOutput(visible[1], async id => { requests.push(id); return 'Process exited with code 0\nOutput:\nAda! Full output'; }), 'Hello Ada! Full output');
+  assert.deepEqual(requests, ['entry-2']);
+});
+
+test('unified model selection preserves defaults, independent reasoning and manual IDs', () => {
+  const models = new ModelSelection({ models: ['first', 'second'], default_model: 'second', model_reasoning: { second: { reasoning_effort: 'max' } } });
+  models.add('local/model:tag\nthird\nthird'); assert.deepEqual(models.models, ['first', 'second', 'local/model:tag', 'third']);
+  assert.equal(models.defaultModel, 'second'); models.setDefault('third');
+  models.remove('second'); assert.equal(models.defaultModel, 'third'); assert.deepEqual(models.snapshot().model_reasoning, {});
+  models.remove('third'); assert.equal(models.defaultModel, 'first');
+  const before = models.snapshot(); assert.throws(() => models.add('not a model'), /不包含空格/); assert.deepEqual(models.snapshot(), before);
+  assert.throws(() => models.setDefault('missing'), /已添加/);
 });

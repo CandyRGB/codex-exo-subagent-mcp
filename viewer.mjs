@@ -84,7 +84,7 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
         const result = await repository.update(decodeURIComponent(match[1]), JSON.parse(body));
         send(200, result); return;
       }
-      const staticFiles = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/tool-output.js': ['tool-output.js', 'text/javascript; charset=utf-8'], '/settings.js': ['settings.js', 'text/javascript; charset=utf-8'], '/settings.css': ['settings.css', 'text/css; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
+      const staticFiles = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/tool-output.js': ['tool-output.js', 'text/javascript; charset=utf-8'], '/settings.js': ['settings.js', 'text/javascript; charset=utf-8'], '/model-selection.js': ['model-selection.js', 'text/javascript; charset=utf-8'], '/settings.css': ['settings.css', 'text/css; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
       if (request.method === 'GET' && staticFiles[url.pathname]) {
         const [file, type] = staticFiles[url.pathname];
         send(200, readFileSync(join(root, 'web', file)), type); return;

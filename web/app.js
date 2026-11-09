@@ -1,5 +1,5 @@
 import { createModelSettings } from './settings.js';
-import { commandOutput } from './tool-output.js';
+import { commandOutput, coalesceTerminalEntries, completeCommandOutput } from './tool-output.js';
 const $ = id => document.getElementById(id);
 const icon = name => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); const use = document.createElementNS(s.namespaceURI, 'use'); use.setAttribute('href', `#i-${name}`); s.append(use); return s; };
 const node = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
@@ -84,7 +84,7 @@ function sessionButton(session, recent = false) {
   if (session.id === selectedId) button.setAttribute('aria-current', 'page');
   if (recent) button.append(node('span', `session-dot${isActive(session.status) ? ' running' : ''}`));
   button.append(node('span', 'session-name', session.title));
-  if (isActive(session.status)) button.append(node('span', 'status-dot running'));
+  if (isActive(session.status) && !recent) button.append(node('span', 'status-dot running'));
   else if (recent) button.append(node('span', 'session-time', recentTime(session.updated_at)));
   button.addEventListener('click', () => select(session.id));
   return button;
@@ -126,9 +126,9 @@ function pretty(value) { return typeof value === 'string' ? value : JSON.stringi
 function toolEntry(entry, opened) {
   const detail = node('details', 'tool-card'); detail.dataset.entryId = entry.id; detail.open = opened.has(entry.id);
   const summary = node('summary'); const symbol = icon('terminal'); symbol.classList.add('tool-icon');
-  const cmd = entry.arguments?.cmd || entry.arguments?.command || (typeof entry.arguments === 'string' ? entry.arguments : '');
+  const cmd = entry.arguments?.cmd || entry.arguments?.command || entry.arguments?.chars || (typeof entry.arguments === 'string' ? entry.arguments : '');
   const shell = /exec_command|command_execution|write_stdin/.test(entry.name);
-  const label = shell ? '执行命令' : /file/.test(entry.name) ? '文件操作' : entry.name;
+  const label = /write_stdin/.test(entry.name) ? entry.arguments?.chars ? '终端输入' : '终端输出' : shell ? '执行命令' : /file/.test(entry.name) ? '文件操作' : entry.name;
   const caption = node('span', 'tool-caption', `${label}${cmd ? ' · ' + cmd.split('\n')[0] : ''}`); caption.title = cmd;
   const status = node('span', `tool-state ${entry.status}`);
   if (entry.status === 'completed') status.append(icon('check'));
@@ -136,23 +136,37 @@ function toolEntry(entry, opened) {
   const chevron = icon('chevron'); chevron.classList.add('tool-chevron'); summary.append(symbol, caption, status, chevron);
   const body = node('div', 'tool-details');
   if (!shell) body.append(node('div', 'tool-section-label', '参数'), node('pre', '', pretty(entry.arguments)));
-  const output = shell ? commandOutput(entry.output) : pretty(entry.output) || '';
-  const outputPath = `/api/sessions/${data.session.id}/entries/${entry.id}/output`;
+  const output = entry.display_output ?? (shell ? commandOutput(entry.output) : pretty(entry.output) || '');
+  const outputSessionId = data.session.id;
+  const outputPath = `/api/sessions/${outputSessionId}/entries/${entry.id}/output`;
   const outputBox = node('div', 'tool-output');
+  const readFull = async id => {
+    const response = await fetch(`/api/sessions/${outputSessionId}/entries/${id}/output`);
+    if (!response.ok) throw new Error('无法读取完整输出，请稍后重试');
+    return response.text();
+  };
   const copyButton = node('button', 'icon-button tool-output-copy'); copyButton.type = 'button';
   copyButton.title = shell ? '复制命令输出' : '复制工具输出'; copyButton.setAttribute('aria-label', copyButton.title); copyButton.disabled = !output;
   copyButton.append(icon('copy')); copyButton.addEventListener('click', async () => {
     if (!entry.output_truncated) { await copy(output); return; }
     copyButton.disabled = true;
     try {
-      const response = await fetch(outputPath);
-      if (!response.ok) throw new Error('无法读取完整输出，请稍后重试');
-      const full = await response.text(); await copy(shell ? commandOutput(full) : full);
+      await copy(shell ? await completeCommandOutput(entry, readFull) : await readFull(entry.id));
     } catch (error) { toast(error.message); }
     finally { copyButton.disabled = false; }
   });
   outputBox.append(copyButton, node('pre', 'tool-output-text', output || '暂无输出')); body.append(outputBox);
-  if (entry.output_truncated) { const full = node('a', 'tool-copy', '输出较长，下载完整输出'); full.href = outputPath; body.append(full); }
+  if (entry.output_truncated) {
+    const full = node('a', 'tool-copy', '输出较长，下载完整输出'); full.href = outputPath;
+    if (entry.output_parts?.length > 1) full.addEventListener('click', async event => {
+      event.preventDefault();
+      try {
+        const text = await completeCommandOutput(entry, readFull); const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+        const link = node('a'); link.href = url; link.download = `command-${entry.id}.txt`; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (error) { toast(error.message); }
+    });
+    body.append(full);
+  }
   detail.append(summary, body); return detail;
 }
 function messageEntry(entry) {
@@ -178,7 +192,7 @@ function renderConversation(toBottom = false) {
   const scroll = $('conversation-scroll'); const nearBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140; const previousTop = scroll.scrollTop;
   const opened = new Set([...$('transcript').querySelectorAll('details[open]')].map(e => e.dataset.entryId));
   const fragment = document.createDocumentFragment();
-  for (const entry of data.entries) fragment.append(entry.kind === 'tool' ? toolEntry(entry, opened) : messageEntry(entry));
+  for (const entry of coalesceTerminalEntries(data.entries)) fragment.append(entry.kind === 'tool' ? toolEntry(entry, opened) : messageEntry(entry));
   if (!data.entries.length) fragment.append(node('p', 'empty-nav', isActive(session.status) ? 'DeepSeek 已接收任务，正在等待第一条记录…' : '此会话暂未找到消息记录。'));
   $('transcript').replaceChildren(fragment);
   document.title = `${session.title} · 子代理会话`;
@@ -278,7 +292,7 @@ $('rename-form').addEventListener('submit', async event => {
 $('info-button').addEventListener('click', () => {
   if (!data) return;
   const fragment = document.createDocumentFragment(); const s = data.session;
-  const rows = [['工作目录', s.cwd], ['模型与路由', `${s.model} · ${s.provider}`], ['会话来源', '由 MCP 调用，已关联任务记录'], ['创建时间', fullDate(s.created_at)], ['最后更新', fullDate(s.updated_at)], ['Token 用量', data.usage.status === 'reported' ? `输入 ${(data.usage.input_tokens || 0).toLocaleString()} · 输出 ${(data.usage.output_tokens || 0).toLocaleString()}` : '上游未提供有效统计，暂不可用']];
+  const rows = [['工作目录', s.cwd], ['模型与路由', `${s.model} · ${s.provider}`], ['创建时间', fullDate(s.created_at)], ['最后更新', fullDate(s.updated_at)], ['Token 用量', data.usage.status === 'reported' ? `输入 ${(data.usage.input_tokens || 0).toLocaleString()} · 输出 ${(data.usage.output_tokens || 0).toLocaleString()}` : '上游未提供有效统计，暂不可用']];
   for (const [label, value] of rows) { const row = node('div', 'info-row'); row.append(node('span', '', label), node('div', '', value)); fragment.append(row); }
   const id = node('div', 'info-row'); id.append(node('span', '', '会话 ID'), node('div', '', s.id)); const button = node('button', 'info-copy', '复制会话 ID'); button.addEventListener('click', () => copy(s.id)); id.append(button); fragment.append(id);
   $('info-content').replaceChildren(fragment); $('info-dialog').showModal();
