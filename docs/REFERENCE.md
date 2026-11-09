@@ -6,9 +6,11 @@ Requires Node.js 24+ and a Codex CLI supporting `exec --json` and `exec resume`.
 
 ## Local session page
 
+Consecutive terminal commands are collapsed under a single command group; expanding it reveals compact per-command rows and edge-to-edge output. Disclosure state survives refresh. The Add connection action lives in the top bar and is shown only while model settings are open.
+
 The conversation header shows only the model and status. Dates and turn/tool counts live in session information, and assistant messages display content without identity headers. The sidebar keeps branding, theme and refresh actions; connection errors appear when needed. Existing connections use a type label, while new connections expose the type selector.
 
-Open `http://127.0.0.1:43187`. The page groups conversations by working directory under Projects and shows recent sessions, using a single status dot for running state. Select a conversation to read user instructions, agent replies, commands and tool outputs. It supports search, automatic refresh, earlier-message loading, pinning, display-title changes and JSON export. Empty `write_stdin` polls from the same terminal process are folded into the original command card; calls that carry real input remain separate. Raw API records, exports and full outputs are preserved unchanged. Display metadata does not alter the original Codex logs.
+Open `http://127.0.0.1:43187`. The page groups conversations by working directory under Projects and shows recent sessions, using a single status dot for running state. Recent sessions keep update ordering without visible timestamps or date headings. Select a conversation to read user instructions, agent replies, commands and tool outputs. It supports search, automatic refresh, earlier-message loading, pinning, display-title changes and JSON export. Empty `write_stdin` polls from the same terminal process are folded into the original command card; calls that carry real input remain separate. Raw API records, exports and full outputs are preserved unchanged. Display metadata does not alter the original Codex logs.
 
 ## Model settings
 

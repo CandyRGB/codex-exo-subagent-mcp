@@ -9,7 +9,7 @@ import { get as httpGet } from 'node:http';
 import { SessionRepository, parseRollout } from '../history.mjs';
 import { createViewer } from '../viewer.mjs';
 import { JobManager } from '../runtime.mjs';
-import { commandOutput, coalesceTerminalEntries, completeCommandOutput } from '../web/tool-output.js';
+import { commandOutput, coalesceTerminalEntries, completeCommandOutput, groupCommandRuns, commandGroupOpen } from '../web/tool-output.js';
 import { ModelSelection } from '../web/model-selection.js';
 
 function fixture() {
@@ -216,4 +216,32 @@ test('unified model selection preserves defaults, independent reasoning and manu
   models.remove('third'); assert.equal(models.defaultModel, 'first');
   const before = models.snapshot(); assert.throws(() => models.add('not a model'), /不包含空格/); assert.deepEqual(models.snapshot(), before);
   assert.throws(() => models.setDefault('missing'), /已添加/);
+});
+
+test('consecutive commands share one group without crossing messages or unrelated tools', () => {
+  const first = terminal('entry-1', 'exec_command', { cmd: 'first' }, '1');
+  const second = terminal('entry-2', 'functions.exec_command', { cmd: 'second' }, '2');
+  const message = { id: 'entry-3', kind: 'assistant', text: 'Next step' };
+  const third = terminal('entry-4', 'exec_command', { cmd: 'third' }, '3');
+  const unrelated = terminal('entry-5', 'apply_patch', {}, 'done');
+  const input = terminal('entry-6', 'write_stdin', { session_id: 42, chars: 'yes\n' }, 'yes');
+  const last = terminal('entry-7', 'exec_command', { cmd: 'last' }, '7');
+  const source = [first, second, message, third, unrelated, input, last]; const before = JSON.stringify(source);
+  const grouped = groupCommandRuns(source);
+  assert.equal(grouped.length, 5);
+  assert.equal(grouped[0].kind, 'command_group'); assert.deepEqual(grouped[0].entries, [first, second]);
+  assert.equal(grouped[1], message); assert.equal(grouped[2], third); assert.equal(grouped[3], unrelated);
+  assert.deepEqual(grouped[4].entries, [input, last]);
+  assert.equal(JSON.stringify(source), before);
+});
+
+test('command group disclosure survives refresh, explicit collapse and loading earlier commands', () => {
+  const entries = [terminal('entry-1', 'exec_command', {}, ''), terminal('entry-2', 'exec_command', {}, '')];
+  const group = groupCommandRuns(entries)[0];
+  assert.equal(commandGroupOpen(group, new Set(), new Set()), false);
+  assert.equal(commandGroupOpen(group, new Set(['entry-1']), new Set()), true, 'An inspected single command stays visible when another command arrives');
+  assert.equal(commandGroupOpen(group, new Set(['entry-1']), new Set(['entry-1', 'entry-2'])), false, 'Closing the group wins over an expanded child');
+  assert.equal(commandGroupOpen(group, new Set([group.id]), new Set()), true);
+  const earlier = terminal('entry-0', 'exec_command', {}, ''); const expanded = groupCommandRuns([earlier, ...entries])[0];
+  assert.equal(commandGroupOpen(expanded, new Set([group.id]), new Set(['entry-1', 'entry-2'])), true);
 });

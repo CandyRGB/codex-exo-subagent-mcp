@@ -69,6 +69,8 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   const $ = id => document.getElementById(id);
   const action = label => $('model-rows').querySelectorAll('button').find(button => button.getAttribute('aria-label') === label);
   assert.ok(!$('settings-load-error').textContent, $('settings-load-error').textContent);
+  assert.ok(document.querySelectorAll('header')[0].contains($('new-connection')), 'Add connection belongs to the top bar');
+  assert.equal($('new-connection').hidden, false); settings.hide(); assert.equal($('new-connection').hidden, true); await settings.show();
   assert.equal($('connection-kind-field').hidden, true); assert.equal($('connection-type-label').textContent, 'API 连接');
   assert.equal($('reasoning-preview').open, false);
   assert.equal($('connections-list').querySelectorAll('select').length, 0);

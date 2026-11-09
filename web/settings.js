@@ -264,9 +264,10 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   return {
     async show() {
       $('settings-page').hidden = false;
+      $('new-connection').hidden = false;
       try { config = await api('/api/config'); $('settings-load-error').hidden = true; populate(config.connections.find(c => c.id === editingId) || config.connections.find(c => c.id === config.default_connection_id)); }
       catch (error) { $('settings-load-error').textContent = error.message; $('settings-load-error').hidden = false; }
     },
-    hide() { $('settings-page').hidden = true; },
+    hide() { $('settings-page').hidden = true; $('new-connection').hidden = true; },
   };
 }

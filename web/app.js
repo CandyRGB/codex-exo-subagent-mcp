@@ -1,5 +1,5 @@
 import { createModelSettings } from './settings.js';
-import { commandOutput, coalesceTerminalEntries, completeCommandOutput } from './tool-output.js';
+import { commandOutput, coalesceTerminalEntries, completeCommandOutput, groupCommandRuns, commandGroupOpen } from './tool-output.js';
 const $ = id => document.getElementById(id);
 const icon = name => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); const use = document.createElementNS(s.namespaceURI, 'use'); use.setAttribute('href', `#i-${name}`); s.append(use); return s; };
 const node = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
@@ -7,8 +7,6 @@ const states = { completed: '已完成', running: '进行中', cancelling: '正�
 const isActive = status => ['running', 'cancelling'].includes(status);
 const time = value => value ? new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
 const fullDate = value => value ? new Date(value).toLocaleString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
-function day(value) { const date = new Date(value); const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate() - 1); return date.toDateString() === today.toDateString() ? '今天' : date.toDateString() === yesterday.toDateString() ? '昨天' : date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }); }
-function recentTime(value) { return day(value) === '今天' ? time(value) : day(value); }
 let sessions = [], selectedId = null, data = null, etag = null, listSignature = '', scope = 'all', busy = false, loading = false, showAllRecent = false, settingsOpen = false;
 let collapsed = new Set();
 try { collapsed = new Set(JSON.parse(localStorage.getItem('subagent-projects') || '[]')); document.documentElement.dataset.theme = localStorage.getItem('subagent-theme') || 'dark'; } catch {}
@@ -83,7 +81,6 @@ function sessionButton(session, recent = false) {
   if (recent) button.append(node('span', `session-dot${isActive(session.status) ? ' running' : ''}`));
   button.append(node('span', 'session-name', session.title));
   if (isActive(session.status) && !recent) button.append(node('span', 'status-dot running'));
-  else if (recent) button.append(node('span', 'session-time', recentTime(session.updated_at)));
   button.addEventListener('click', () => select(session.id));
   return button;
 }
@@ -111,8 +108,7 @@ function renderNavigation() {
   }
   fragment.append(projectSection);
   const recent = section('最近', matching.length); const list = node('div', 'recent-list');
-  let lastDay = '';
-  for (const session of matching.slice(0, showAllRecent || q ? Infinity : 15)) { const groupDay = day(session.updated_at); if (groupDay !== lastDay) { list.append(node('div', 'day-heading', groupDay)); lastDay = groupDay; } list.append(sessionButton(session, true)); }
+  for (const session of matching.slice(0, showAllRecent || q ? Infinity : 15)) list.append(sessionButton(session, true));
   recent.append(list);
   if (matching.length > 15 && !showAllRecent && !q) { const more = node('button', 'show-all', `显示全部 ${matching.length} 条会话`); more.addEventListener('click', () => { showAllRecent = true; renderNavigation(); }); recent.append(more); }
   fragment.append(recent);
@@ -172,6 +168,20 @@ function messageEntry(entry) {
   const article = node('article', 'message assistant-message'); article.setAttribute('aria-label', '回复内容');
   const content = node('div', 'message-content'); markdown(entry.text, content); article.append(content); return article;
 }
+function commandGroup(group, opened, previouslyGrouped) {
+  const detail = node('details', 'command-group'); detail.dataset.entryId = group.id;
+  detail.dataset.members = group.entries.map(entry => entry.id).join(' ');
+  detail.open = commandGroupOpen(group, opened, previouslyGrouped);
+  const running = group.entries.some(entry => isActive(entry.status));
+  const failures = group.entries.filter(entry => entry.status === 'failed').length;
+  const summary = node('summary'); summary.append(icon('terminal'), node('span', 'command-group-caption', running ? '正在运行命令' : '运行了命令'), node('span', 'command-group-count', String(group.entries.length)));
+  summary.setAttribute('aria-label', `${running ? '正在运行' : '运行了'} ${group.entries.length} 个命令${failures ? `，${failures} 项失败` : ''}`);
+  if (failures) summary.append(node('span', 'tool-state failed', `${failures} 项失败`));
+  const chevron = icon('chevron'); chevron.classList.add('tool-chevron'); summary.append(chevron);
+  const items = node('div', 'command-group-items');
+  for (const entry of group.entries) items.append(toolEntry(entry, opened));
+  detail.append(summary, items); return detail;
+}
 function renderConversation(toBottom = false) {
   if (!data) return;
   const session = data.session;
@@ -185,8 +195,9 @@ function renderConversation(toBottom = false) {
   $('load-earlier').hidden = data.earlier_cursor === null;
   const scroll = $('conversation-scroll'); const nearBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140; const previousTop = scroll.scrollTop;
   const opened = new Set([...$('transcript').querySelectorAll('details[open]')].map(e => e.dataset.entryId));
+  const previouslyGrouped = new Set([...$('transcript').querySelectorAll('details.command-group')].flatMap(element => element.dataset.members.split(' ')));
   const fragment = document.createDocumentFragment();
-  for (const entry of coalesceTerminalEntries(data.entries)) fragment.append(entry.kind === 'tool' ? toolEntry(entry, opened) : messageEntry(entry));
+  for (const entry of groupCommandRuns(coalesceTerminalEntries(data.entries))) fragment.append(entry.kind === 'command_group' ? commandGroup(entry, opened, previouslyGrouped) : entry.kind === 'tool' ? toolEntry(entry, opened) : messageEntry(entry));
   if (!data.entries.length) fragment.append(node('p', 'empty-nav', isActive(session.status) ? 'DeepSeek 已接收任务，正在等待第一条记录…' : '此会话暂未找到消息记录。'));
   $('transcript').replaceChildren(fragment);
   document.title = `${session.title} · 子代理会话`;

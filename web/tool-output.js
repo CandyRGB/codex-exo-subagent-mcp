@@ -23,6 +23,23 @@ export function commandTransport(value) {
 
 export const commandOutput = value => commandTransport(value).output;
 
+export function groupCommandRuns(entries) {
+  const result = [];
+  const command = entry => entry.kind === 'tool' && /(?:^|\.)(?:exec_command|command_execution|write_stdin)$/.test(entry.name);
+  for (let index = 0; index < entries.length;) {
+    if (!command(entries[index])) { result.push(entries[index++]); continue; }
+    let end = index + 1;
+    while (end < entries.length && command(entries[end])) end++;
+    result.push(end - index === 1 ? entries[index] : { kind: 'command_group', id: `command-group-${entries[index].id}`, entries: entries.slice(index, end) });
+    index = end;
+  }
+  return result;
+}
+
+export function commandGroupOpen(group, opened, previouslyGrouped) {
+  return opened.has(group.id) || group.entries.some(entry => opened.has(`command-group-${entry.id}`) || opened.has(entry.id) && !previouslyGrouped.has(entry.id));
+}
+
 // Presentation-only grouping; original entries, export and entry IDs remain intact.
 export function coalesceTerminalEntries(entries) {
   const visible = [], processes = new Map();
