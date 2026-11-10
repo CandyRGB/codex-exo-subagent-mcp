@@ -41,8 +41,8 @@
     <section id="settings-page" class="settings-page" aria-label="模型与连接" hidden><div class="settings-content">
 
       <div id="settings-load-error" class="settings-load-error" role="status" hidden></div>
-      <div class="settings-grid"><aside><div class="connections-heading"><span>已保存的连接</span><small id="connection-count"></small></div><div id="connections-list" class="connections-list"></div></aside>
-      <section class="connection-editor"><div class="connection-editor-heading"><h2 id="connection-editor-title">添加模型连接</h2><span id="connection-type-label" class="connection-type-label" hidden></span></div><p id="connection-editor-hint" class="connection-editor-intro">保存后即可让子代理使用此连接。</p>
+      <div class="connections-heading"><span>已保存的连接</span><small id="connection-count"></small></div><div id="connections-list" class="connections-list"></div>
+      <div id="connection-editor-home" hidden><section id="connection-editor" class="connection-editor" aria-labelledby="connection-editor-title" hidden><div class="connection-editor-heading"><h2 id="connection-editor-title">添加模型连接</h2><span id="connection-type-label" class="connection-type-label" hidden></span></div><p id="connection-editor-hint" class="connection-editor-intro">保存后即可让子代理使用此连接。</p>
       <form id="connection-form">
         <div class="settings-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="80" required placeholder="例如：我的本地 Qwen / 公司模型路由"></div>
         <div id="connection-kind-field" class="settings-field"><label for="connection-kind">接入方式</label><select id="connection-kind"><option value="api" selected>模型 API 连接</option><option value="profile">已有 Codex profile</option></select></div>

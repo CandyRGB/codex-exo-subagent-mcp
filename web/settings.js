@@ -3,12 +3,12 @@ import { ModelSelection } from './model-selection.js';
 import { createSelectMenus } from './dropdown.js';
 const $ = id => document.getElementById(id);
 const el = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
-const kinds = { profile: '已有 Codex profile', local: '模型 API 连接', api: '模型 API 连接', router: '模型 API 连接' };
 const protocols = { profile: 'Codex profile', responses: 'Responses', chat_completions: 'Chat Completions' };
 
 export function createModelSettings({ toast, onSaved = () => {} }) {
   const selects = createSelectMenus(document);
   let config = null, editingId = null, pendingDelete = null, busy = false, exported = null;
+  let editorOpen = false, initialized = false;
   let reasoningDefaults = {}, modelReasoning = Object.create(null), reasoningScope = '', discoveredCapabilities = {};
   let selection = new ModelSelection(), discoveredModels = [], savedSignature = '';
   const modelsOf = () => selection.models;
@@ -138,8 +138,9 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     input.model_reasoning = Object.fromEntries(Object.entries(input.model_reasoning).sort(([a], [b]) => a.localeCompare(b)).map(([model, settings]) => [model, normalizeReasoning(settings)]));
     return JSON.stringify({ ...input, ...normalized, pending_models: $('model-id-input').value });
   }
-  function populate(connection = null) {
+  function populate(connection = null, expand = true) {
     selects.close();
+    editorOpen = expand; initialized = true;
     if (editingId !== connection?.id) { discoveredCapabilities = {}; discoveredModels = []; }
     editingId = connection?.id || null;
     $('connection-editor-title').textContent = connection ? '编辑连接' : '添加模型连接';
@@ -181,22 +182,48 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('connection-count').textContent = `${config.connections.length} 个连接`;
     $('remove-connection').disabled = editingId === config.default_connection_id;
     $('remove-connection').title = editingId === config.default_connection_id ? '先选择另一个默认连接，才能移除此连接' : '移除模型连接';
+    // Park the shared form before replacing the rows so its values and listeners survive.
+    const editor = $('connection-editor'); $('connection-editor-home').append(editor); editor.hidden = true;
     const fragment = document.createDocumentFragment();
-    for (const connection of config.connections) {
-      const card = el('article', `connection-card${connection.id === editingId ? ' selected' : ''}`);
-      const heading = el('div', 'connection-card-heading'); const title = el('button', 'connection-card-title', connection.name); title.type = 'button'; title.addEventListener('click', () => { if (!busy) populate(connection); });
-      heading.append(title);
-      if (connection.id === config.default_connection_id) heading.append(el('span', 'default-badge', '默认'));
-      else if (!connection.enabled) heading.append(el('span', 'disabled-badge', '已停用'));
-      card.append(heading, el('div', 'connection-card-meta', `${kinds[connection.kind]} · ${protocols[connection.protocol]}`));
-      if (connection.base_url) { const endpoint = el('div', 'connection-card-endpoint', connection.base_url); endpoint.title = connection.base_url; card.append(endpoint); }
-      const controls = el('div', 'connection-card-controls');
-      const button = el('button', 'set-default-button', '设为默认连接'); button.type = 'button'; button.disabled = !connection.enabled;
-      button.addEventListener('click', async () => {
+    function row(connection = null) {
+      const id = connection?.id || 'new', name = connection?.name || '新连接';
+      const expanded = editorOpen && editingId === (connection?.id || null);
+      const card = el('article', `connection-card${expanded ? ' selected' : ''}`); card.id = `connection-row-${id}`;
+      const heading = el('div', 'connection-row'), info = el('div', 'connection-row-info');
+      const title = el('span', 'connection-card-title', name); title.title = name; info.append(title);
+      if (connection) {
+        info.append(el('span', 'connection-card-meta', protocols[connection.protocol]));
+        const model = el('span', 'connection-card-model', connection.default_model || ''); model.title = connection.default_model || ''; info.append(model);
+      }
+      heading.append(info);
+      if (connection?.id === config.default_connection_id) heading.append(el('span', 'default-badge', '默认'));
+      if (connection && !connection.enabled) heading.append(el('span', 'disabled-badge', '已停用'));
+      const actions = el('div', 'connection-row-actions');
+      if (connection && connection.id !== config.default_connection_id) {
+        const button = el('button', 'set-default-button', '设为默认连接'); button.type = 'button'; button.disabled = !connection.enabled;
+        button.addEventListener('click', async () => {
+          if (busy) return;
+          try { config = await api('/api/config/default', { method: 'PATCH', ...payload({ connection_id: connection.id, model: connection.default_model }) }); renderCards(); toast('新任务将使用所选连接'); onSaved(config); } catch (error) { toast(error.message); }
+        }); actions.append(button);
+      }
+      const toggle = el('button', 'connection-expand icon-button'); toggle.id = `connection-toggle-${id}`; toggle.type = 'button';
+      toggle.setAttribute('aria-label', `${expanded ? '收起' : '编辑'} ${name}`); toggle.title = expanded ? '收起' : '展开编辑';
+      toggle.setAttribute('aria-expanded', String(expanded)); toggle.setAttribute('aria-controls', 'connection-editor');
+      toggle.append(el('span', 'connection-expand-arrow'));
+      toggle.addEventListener('click', () => {
         if (busy) return;
-        try { config = await api('/api/config/default', { method: 'PATCH', ...payload({ connection_id: connection.id, model: connection.default_model }) }); renderCards(); toast('新任务将使用所选连接'); onSaved(config); } catch (error) { toast(error.message); }
+        selects.close();
+        if (editingId === (connection?.id || null)) { editorOpen = !editorOpen; renderCards(); }
+        else populate(connection);
+        ($(`connection-toggle-${id}`) || $('new-connection')).focus();
       });
-      if (connection.id !== config.default_connection_id) { controls.append(button); card.append(controls); } fragment.append(card);
+      actions.append(toggle); heading.append(actions); card.append(heading);
+      if (expanded) { card.append(editor); editor.hidden = false; }
+      return card;
+    }
+    if (editorOpen && !editingId) fragment.append(row());
+    for (const connection of config.connections) {
+      fragment.append(row(connection));
     }
     $('connections-list').replaceChildren(fragment);
   }
@@ -223,7 +250,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   }
   $('connection-form').addEventListener('submit', event => { event.preventDefault(); void save(); });
   $('test-connection').addEventListener('click', () => { void testConnection(); });
-  $('new-connection').addEventListener('click', () => { if (!busy) { populate(); $('connection-name').focus(); } });
+  $('new-connection').addEventListener('click', () => { if (!busy) { if (initialized && !editingId) { editorOpen = true; renderCards(); } else populate(); $('connection-name').focus(); } });
   $('add-model').addEventListener('click', () => { if (busy) return; try { commitModelInput(); } catch (error) { result(error.message, false); } });
   $('reasoning-defaults').addEventListener('click', () => { saveReasoningScope(); reasoningScope = ''; loadReasoningScope(); renderModels(); });
   $('reasoning-model-override').addEventListener('change', () => { saveReasoningScope(); loadReasoningScope(); });
@@ -264,13 +291,13 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && $('connection-more').open) { $('connection-more').open = false; $('connection-more').querySelector('summary').focus(); } });
   $('confirm-remove-connection').addEventListener('click', async () => {
     if (!pendingDelete) return;
-    try { config = await api(`/api/config/connections/${pendingDelete}`, { method: 'DELETE' }); pendingDelete = null; $('delete-connection-dialog').close(); populate(config.connections.find(c => c.id === config.default_connection_id)); toast('连接已移除'); onSaved(config); } catch (error) { toast(error.message); }
+    try { config = await api(`/api/config/connections/${pendingDelete}`, { method: 'DELETE' }); pendingDelete = null; $('delete-connection-dialog').close(); populate(config.connections.find(c => c.id === config.default_connection_id), false); toast('连接已移除'); onSaved(config); } catch (error) { toast(error.message); }
   });
   return {
     async show() {
       $('settings-page').hidden = false;
       $('new-connection').hidden = false;
-      try { config = await api('/api/config'); $('settings-load-error').hidden = true; populate(config.connections.find(c => c.id === editingId) || config.connections.find(c => c.id === config.default_connection_id)); }
+      try { config = await api('/api/config'); $('settings-load-error').hidden = true; if (initialized && !editingId) renderCards(); else populate(config.connections.find(c => c.id === editingId) || config.connections.find(c => c.id === config.default_connection_id), editorOpen); }
       catch (error) { $('settings-load-error').textContent = error.message; $('settings-load-error').hidden = false; }
     },
     hide() { selects.close(); $('settings-page').hidden = true; $('new-connection').hidden = true; },

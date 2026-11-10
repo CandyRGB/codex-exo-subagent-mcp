@@ -11,9 +11,13 @@ class Element {
   get textContent() { return this._text + this.children.map(child => child.textContent).join(''); }
   set textContent(value) { this._text = String(value); this.children = []; }
   append(...children) {
-    for (const child of children) { child.parent = this; this.children.push(child); if (this.tagName === 'select' && child.tagName === 'option' && !this.value) this.value = child.value; }
+    for (const child of children) {
+      if (child.tagName === 'fragment') { this.append(...[...child.children]); continue; }
+      if (child.parent) child.parent.children.splice(child.parent.children.indexOf(child), 1);
+      child.parent = this; this.children.push(child); if (this.tagName === 'select' && child.tagName === 'option' && !this.value) this.value = child.value;
+    }
   }
-  replaceChildren(...children) { this.children = []; this._text = ''; this.append(...children); }
+  replaceChildren(...children) { for (const child of this.children) child.parent = null; this.children = []; this._text = ''; this.append(...children); }
   setAttribute(name, value) { this.attributes[name] = String(value); }
   removeAttribute(name) { delete this.attributes[name]; }
   getAttribute(name) { return this.attributes[name] ?? null; }
@@ -51,7 +55,7 @@ class Element {
 }
 
 export function documentFixture(html) {
-  const document = new Element('document'), ids = new Map(), stack = [document];
+  const document = new Element('document'), stack = [document];
   let cursor = 0;
   for (const match of html.matchAll(/<(\/?)([\w-]+)([^>]*?)>/g)) {
     stack.at(-1)._text += html.slice(cursor, match.index).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'); cursor = match.index + match[0].length;
@@ -59,10 +63,9 @@ export function documentFixture(html) {
     if (close) { const index = stack.findLastIndex(node => node.tagName === tag); if (index > 0) stack.length = index; continue; }
     const attributes = Object.fromEntries([...raw.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(item => [item[1], item[2] ?? '']));
     const element = new Element(tag, attributes); stack.at(-1).append(element);
-    if (attributes.id) ids.set(attributes.id, element);
     if (!raw.endsWith('/') && !['input', 'meta', 'link', 'br', 'hr'].includes(tag)) stack.push(element);
   }
-  document.getElementById = id => ids.get(id) || document.querySelectorAll('*').find(node => node.id === id);
+  document.getElementById = id => document.querySelectorAll('*').find(node => node.id === id);
   document.createElement = tag => new Element(tag);
   document.createDocumentFragment = () => new Element('fragment');
   document.body = document.querySelectorAll('body')[0];

@@ -69,13 +69,22 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   const settings = createModelSettings({ toast() {}, onSaved() { saved++; } }); await settings.show();
   const $ = id => document.getElementById(id);
   const action = label => $('model-rows').querySelectorAll('button').find(button => button.getAttribute('aria-label') === label);
+  assert.equal($('connection-editor').hidden, true, 'The list starts fully collapsed');
+  assert.equal($('connection-editor-home').contains($('connection-editor')), true);
+  await $(`connection-toggle-${c.id}`).dispatch('click');
+  assert.equal($(`connection-row-${c.id}`).contains($('connection-editor')), true);
+  assert.equal($(`connection-toggle-${c.id}`).getAttribute('aria-expanded'), 'true');
+  const initialName = $('connection-name').value; $('connection-name').value = 'Unsaved name';
+  await $(`connection-toggle-${c.id}`).dispatch('click'); assert.equal($('connection-editor').hidden, true);
+  await $(`connection-toggle-${c.id}`).dispatch('click'); assert.equal($('connection-name').value, 'Unsaved name', 'Collapse and reopen retain the draft');
+  $('connection-name').value = initialName;
   assert.equal($('connection-protocol-value').textContent, 'Chat Completions（本机适配）');
   assert.ok(!$('settings-load-error').textContent, $('settings-load-error').textContent);
   assert.ok(document.querySelectorAll('header')[0].contains($('new-connection')), 'Add connection belongs to the top bar');
   assert.equal($('new-connection').hidden, false); settings.hide(); assert.equal($('new-connection').hidden, true); await settings.show();
   assert.equal($('connection-kind-field').hidden, true); assert.equal($('connection-type-label').textContent, 'API 连接');
   assert.equal($('reasoning-preview').open, false);
-  assert.equal($('connections-list').querySelectorAll('select').length, 0);
+  assert.ok($('connections-list').querySelectorAll('select').every(select => $('connection-editor').contains(select)), 'Selection controls belong to the expanded form');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 1);
   await action('编辑 b 的思考设置').dispatch('click');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 2, 'Viewing model settings is not an edit');
@@ -104,10 +113,23 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   await $('new-connection').dispatch('click');
   assert.equal($('connection-kind-field').hidden, false); assert.equal($('connection-kind').disabled, false); assert.equal($('connection-type-label').hidden, true);
   const profile = store.publicConfig().connections.find(connection => connection.kind === 'profile');
-  const profileButton = $('connections-list').querySelectorAll('button').find(button => button.textContent === profile.name); await profileButton.dispatch('click');
+  await $(`connection-toggle-${profile.id}`).dispatch('click');
   assert.equal($('connection-kind-field').hidden, true); assert.equal($('connection-type-label').textContent, 'Codex profile');
   assert.equal($('connection-kind-value').textContent, '已有 Codex profile');
   assert.equal($('connection-protocol-trigger').disabled, true);
+  assert.equal($(`connection-toggle-${c.id}`).getAttribute('aria-expanded'), 'false');
+  assert.equal($(`connection-row-${profile.id}`).contains($('connection-editor')), true);
+  await $('new-connection').dispatch('click'); $('connection-name').value = 'Created from row';
+  $('connection-base-url').value = 'http://127.0.0.1:11434/v1'; $('model-id-input').value = 'new-model'; await $('add-model').dispatch('click');
+  await $('connection-toggle-new').dispatch('click'); assert.equal($('connection-row-new'), undefined);
+  await $('new-connection').dispatch('click'); assert.equal($('connection-name').value, 'Created from row');
+  await $('connection-form').dispatch('submit'); await eventually(() => saved === 3 && !$('save-connection').disabled);
+  const created = store.read().connections.find(connection => connection.name === 'Created from row'); assert.ok(created);
+  assert.equal($('connection-row-new'), undefined); assert.equal($(`connection-row-${created.id}`).contains($('connection-editor')), true);
+  await $('remove-connection').dispatch('click'); await $('confirm-remove-connection').dispatch('click');
+  assert.equal(store.read().connections.some(connection => connection.id === created.id), false); assert.equal($('connection-editor').hidden, true);
+  assert.equal($('connections-list').querySelectorAll('form').length, 0, 'The collapsed list contains no visible editor');
+  assert.equal(document.querySelectorAll('form').filter(form => form.id === 'connection-form').length, 1, 'Moving the form never duplicates its controls');
 });
 
 test('select menus commit native values, skip disabled choices, cancel and stay within the viewport', async () => {
