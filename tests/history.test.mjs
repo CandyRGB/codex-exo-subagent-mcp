@@ -146,7 +146,7 @@ test('frontend event bindings refer to real elements and all local assets are pr
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
   assert.equal(new Set(ids).size, ids.length, 'element IDs are unique');
   for (const m of js.matchAll(/\$\('([^']+)'\)/g)) assert.ok(ids.includes(m[1]), `Missing bound element ${m[1]}`);
-  for (const name of ['app.js', 'settings.js', 'style.css', 'settings.css', 'favicon.svg']) assert.ok(readFileSync(fileURLToPath(new URL(`../web/${name}`, import.meta.url))).length > 0);
+  for (const name of ['app.js', 'settings.js', 'dropdown.js', 'style.css', 'settings.css', 'favicon.svg']) assert.ok(readFileSync(fileURLToPath(new URL(`../web/${name}`, import.meta.url))).length > 0);
 });
 
 test('HTTP serves real histories and assets; rejects foreign origins, DNS rebinding and traversal', async t => {
@@ -155,6 +155,7 @@ test('HTTP serves real histories and assets; rejects foreign origins, DNS rebind
   const base = viewer.url;
   assert.equal((await fetch(base + '/')).status, 200);
   assert.equal((await fetch(base + '/app.js')).status, 200);
+  assert.equal((await fetch(base + '/dropdown.js')).status, 200);
   assert.equal((await (await fetch(base + '/api/sessions')).json()).sessions.length, 1);
   const detail = await fetch(`${base}/api/sessions/${native.id}`); const etag = detail.headers.get('etag'); await detail.json();
   assert.equal((await fetch(`${base}/api/sessions/${native.id}`, { headers: { 'If-None-Match': etag } })).status, 304);

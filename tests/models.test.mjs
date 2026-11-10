@@ -12,6 +12,7 @@ import { readJSON, sseJSON, responsesToChat } from '../model-gateway.mjs';
 import { managedConfig, tomlValue } from '../model-config.mjs';
 import { applyReasoning, effectiveReasoning, normalizeReasoning } from '../reasoning.mjs';
 import { documentFixture, eventually } from './dom-fixture.mjs';
+import { createSelectMenus } from '../web/dropdown.js';
 
 function fixture() { const stateDir = fileURLToPath(new URL(`../.test-runs/models-${randomUUID()}/`, import.meta.url)); mkdirSync(stateDir, { recursive: true }); return stateDir; }
 function save(store, extra = {}) {
@@ -63,11 +64,12 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   globalThis.document = document; globalThis.fetch = (url, options) => originalFetch(typeof url === 'string' && url.startsWith('/') ? v.url + url : url, options);
   t.after(() => { globalThis.document = originalDocument; globalThis.fetch = originalFetch; });
   let source = readFileSync(fileURLToPath(new URL('../web/settings.js', import.meta.url)), 'utf8');
-  source = source.replace('./reasoning.js', new URL('../reasoning.mjs', import.meta.url).href).replace('./model-selection.js', new URL('../web/model-selection.js', import.meta.url).href);
+  source = source.replace('./reasoning.js', new URL('../reasoning.mjs', import.meta.url).href).replace('./model-selection.js', new URL('../web/model-selection.js', import.meta.url).href).replace('./dropdown.js', new URL('../web/dropdown.js', import.meta.url).href);
   const { createModelSettings } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
   const settings = createModelSettings({ toast() {}, onSaved() { saved++; } }); await settings.show();
   const $ = id => document.getElementById(id);
   const action = label => $('model-rows').querySelectorAll('button').find(button => button.getAttribute('aria-label') === label);
+  assert.equal($('connection-protocol-value').textContent, 'Chat Completions（本机适配）');
   assert.ok(!$('settings-load-error').textContent, $('settings-load-error').textContent);
   assert.ok(document.querySelectorAll('header')[0].contains($('new-connection')), 'Add connection belongs to the top bar');
   assert.equal($('new-connection').hidden, false); settings.hide(); assert.equal($('new-connection').hidden, true); await settings.show();
@@ -86,12 +88,17 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   $('model-id-input').value = 'c'; await $('add-model').dispatch('click');
   await $('discover-models').dispatch('click'); await eventually(() => !$('save-connection').disabled);
   await action('添加模型 d').dispatch('click');
+  await $('connection-protocol-trigger').dispatch('click');
+  await $('settings-select-menu').children.find(option => option.textContent === 'Responses API').dispatch('click');
+  assert.equal($('connection-protocol').value, 'responses');
   await $('connection-form').dispatch('submit'); await eventually(() => saved === 1 && !$('save-connection').disabled);
+  assert.equal(store.get(c.id).protocol, 'responses', 'Choosing from the styled menu reaches the saved configuration');
   assert.deepEqual(store.get(c.id).models, ['a', 'b', 'c', 'd']); assert.equal(store.get(c.id).default_model, 'b');
   assert.equal(store.get(c.id).model_reasoning.b.reasoning_effort, 'provider:max'); assert.equal(probes, 2, 'Saving does not run inference');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 3); assert.match($('connection-test-result').textContent, /TEST b/);
   await action('移除模型 b').dispatch('click');
-  await action('编辑 d 的思考设置').dispatch('click'); $('reasoning-model-override').checked = true; await $('reasoning-model-override').dispatch('change'); $('connection-reasoning').value = '';
+  await action('编辑 d 的思考设置').dispatch('click'); assert.equal($('connection-thinking-format-trigger').disabled, true);
+  $('reasoning-model-override').checked = true; await $('reasoning-model-override').dispatch('change'); assert.equal($('connection-thinking-format-trigger').disabled, false); $('connection-reasoning').value = '';
   await $('connection-form').dispatch('submit'); await eventually(() => saved === 2 && !$('save-connection').disabled);
   assert.equal(store.get(c.id).default_model, 'a'); assert.equal(store.get(c.id).model_reasoning.b, undefined); assert.deepEqual(store.get(c.id).model_reasoning.d, {});
   await $('new-connection').dispatch('click');
@@ -99,6 +106,32 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   const profile = store.publicConfig().connections.find(connection => connection.kind === 'profile');
   const profileButton = $('connections-list').querySelectorAll('button').find(button => button.textContent === profile.name); await profileButton.dispatch('click');
   assert.equal($('connection-kind-field').hidden, true); assert.equal($('connection-type-label').textContent, 'Codex profile');
+  assert.equal($('connection-kind-value').textContent, '已有 Codex profile');
+  assert.equal($('connection-protocol-trigger').disabled, true);
+});
+
+test('select menus commit native values, skip disabled choices, cancel and stay within the viewport', async () => {
+  const document = documentFixture('<body><label for="mode">Mode</label><select id="mode"><option value="a">Alpha</option><option value="b" disabled>Beta</option><option value="c">Charlie</option></select><fieldset disabled><label for="other">Other</label><select id="other"><option value="x">X</option></select></fieldset></body>');
+  const controls = createSelectMenus(document), $ = id => document.getElementById(id);
+  const button = $('mode-trigger'), menu = $('settings-select-menu'); let inputs = 0, changes = 0;
+  $('mode').addEventListener('input', () => inputs++); $('mode').addEventListener('change', () => changes++);
+  assert.equal($('mode-value').textContent, 'Alpha'); assert.equal($('other-trigger').disabled, true);
+  await button.dispatch('click'); assert.equal(menu.hidden, false); assert.equal(button.getAttribute('aria-expanded'), 'true');
+  await menu.children[1].dispatch('click'); assert.equal($('mode').value, 'a'); assert.equal(menu.hidden, false);
+  await button.dispatch('keydown', { key: 'ArrowDown' }); await button.dispatch('keydown', { key: 'Enter' });
+  assert.equal($('mode').value, 'c'); assert.equal($('mode-value').textContent, 'Charlie'); assert.equal(inputs, 1); assert.equal(changes, 1); assert.equal(menu.hidden, true);
+  await button.dispatch('keydown', { key: 'Home' }); await button.dispatch('keydown', { key: 'Escape' }); assert.equal($('mode').value, 'c');
+  await button.dispatch('click'); await button.dispatch('keydown', { key: 'a' }); await button.dispatch('keydown', { key: 'Enter' }); assert.equal($('mode').value, 'a');
+  await button.dispatch('click'); await button.dispatch('keydown', { key: 'Tab' }); assert.equal(menu.hidden, true);
+  $('mode').value = 'c'; controls.refresh(); assert.equal($('mode-value').textContent, 'Charlie');
+  button.rect = { left: 910, top: 730, bottom: 769, width: 300, height: 39 };
+  await button.dispatch('click'); assert.ok(parseFloat(menu.style.top) < button.rect.top); assert.ok(parseFloat(menu.style.left) + parseFloat(menu.style.width) <= 1016);
+  await document.dispatch('scroll', { target: menu }); assert.equal(menu.hidden, false);
+  await document.dispatch('scroll', { target: document.body }); assert.equal(menu.hidden, true);
+  await button.dispatch('click'); await document.dispatch('pointerdown', { target: document.body }); assert.equal(menu.hidden, true);
+  await button.dispatch('click'); await document.defaultView.dispatch('resize'); assert.equal(menu.hidden, true);
+  await button.dispatch('click'); $('mode').disabled = true; controls.refresh(); assert.equal(menu.hidden, true); assert.equal(button.disabled, true);
+  assert.equal($('mode').getAttribute('aria-hidden'), 'true'); assert.equal(button.getAttribute('aria-activedescendant'), null);
 });
 
 test('manual effort values and complete per-model overrides round-trip without changing legacy defaults', () => {

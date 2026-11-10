@@ -1,11 +1,13 @@
 import { applyReasoning, normalizeReasoning } from './reasoning.js';
 import { ModelSelection } from './model-selection.js';
+import { createSelectMenus } from './dropdown.js';
 const $ = id => document.getElementById(id);
 const el = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
 const kinds = { profile: '已有 Codex profile', local: '模型 API 连接', api: '模型 API 连接', router: '模型 API 连接' };
 const protocols = { profile: 'Codex profile', responses: 'Responses', chat_completions: 'Chat Completions' };
 
 export function createModelSettings({ toast, onSaved = () => {} }) {
+  const selects = createSelectMenus(document);
   let config = null, editingId = null, pendingDelete = null, busy = false, exported = null;
   let reasoningDefaults = {}, modelReasoning = Object.create(null), reasoningScope = '', discoveredCapabilities = {};
   let selection = new ModelSelection(), discoveredModels = [], savedSignature = '';
@@ -80,6 +82,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('reasoning-capability-hint').textContent = capability?.efforts?.length
       ? `服务声明的思考档位：${capability.efforts.join(' / ')}${capability.default_effort ? `；默认 ${capability.default_effort}` : ''}。仅供参考，也可手填其他原始值。`
       : '留空不发送强度；none 与留空含义不同。支持值取决于实际模型和服务。';
+    selects.refresh();
   }
   function loadReasoningScope() {
     const independent = Boolean(reasoningScope && Object.hasOwn(modelReasoning, reasoningScope));
@@ -113,6 +116,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('connection-test-hint').textContent = profile ? '此连接沿用已有 Codex 配置，检查不会调用模型。' : '连接测试使用默认模型及其思考设置，可能计入该服务的用量。';
     $('reasoning-settings-fields').disabled = profile || Boolean(reasoningScope && !$('reasoning-model-override').checked);
     renderModels();
+    selects.refresh();
   }
   function draft() {
     saveReasoningScope();
@@ -135,6 +139,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     return JSON.stringify({ ...input, ...normalized, pending_models: $('model-id-input').value });
   }
   function populate(connection = null) {
+    selects.close();
     if (editingId !== connection?.id) { discoveredCapabilities = {}; discoveredModels = []; }
     editingId = connection?.id || null;
     $('connection-editor-title').textContent = connection ? '编辑连接' : '添加模型连接';
@@ -268,6 +273,6 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       try { config = await api('/api/config'); $('settings-load-error').hidden = true; populate(config.connections.find(c => c.id === editingId) || config.connections.find(c => c.id === config.default_connection_id)); }
       catch (error) { $('settings-load-error').textContent = error.message; $('settings-load-error').hidden = false; }
     },
-    hide() { $('settings-page').hidden = true; $('new-connection').hidden = true; },
+    hide() { selects.close(); $('settings-page').hidden = true; $('new-connection').hidden = true; },
   };
 }
