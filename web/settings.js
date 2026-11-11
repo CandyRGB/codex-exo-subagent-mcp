@@ -170,7 +170,6 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   }
   function syncFields() {
     const profile = $('connection-kind').value === 'profile'; const auth = $('connection-auth').value;
-    $('connection-primary-fields').setAttribute('data-kind', profile ? 'profile' : 'api');
     $('endpoint-fields').hidden = profile; $('profile-fields').hidden = !profile;
     $('connection-advanced').hidden = profile;
     $('connection-base-url').required = !profile;
@@ -239,7 +238,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('connection-auth').value = savedAuthMode === 'none' && supportsStoredKey && connection?.kind !== 'profile' ? 'stored' : savedAuthMode;
     $('connection-auth').querySelector('option[value="stored"]').disabled = !supportsStoredKey;
     apiKeyInput.value = '';
-    apiKeyInput.placeholder = connection?.has_api_key ? '已加密保存，留空保留密钥' : '可留空';
+    apiKeyInput.placeholder = connection?.has_api_key ? '........' : '可留空';
     $('connection-env-var').value = connection?.api_key_env || '';
     $('connection-auth-header').value = connection?.auth_header || 'Authorization';
     reasoningDefaults = { reasoning_effort: connection?.reasoning_effort || '', thinking_format: connection?.thinking_format || 'effort', thinking_mode: connection?.thinking_mode || '', thinking_budget: connection?.thinking_budget ?? '' };

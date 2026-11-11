@@ -36,9 +36,6 @@
 .connection-endpoint-fields {
   display: contents;
 }
-.connection-primary-grid[data-kind="profile"] {
-  grid-template-columns: minmax(0, 1fr);
-}
 @media (max-width: 520px) {
   .connection-primary-grid {
     grid-template-columns: minmax(0, 1fr);

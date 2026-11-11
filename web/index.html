@@ -47,7 +47,7 @@
       <div id="connection-editor-home" hidden><section id="connection-editor" class="connection-editor" hidden>
       <form id="connection-form">
         <div id="connection-kind-field" class="settings-field"><label for="connection-kind">接入方式</label><select id="connection-kind"><option value="api" selected>模型 API 连接</option><option value="profile">已有 Codex profile</option></select></div>
-        <div id="connection-primary-fields" class="connection-primary-grid">
+        <div class="connection-primary-grid">
           <div class="settings-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="80" required placeholder="例如：我的本地 Qwen / 公司模型路由"></div>
           <div id="profile-fields" class="settings-field" hidden><label for="connection-profile">profile 名称</label><input id="connection-profile" pattern="[A-Za-z0-9_-]{1,80}" maxlength="80" placeholder="例如 deepseek.config.toml 填写 deepseek" autocomplete="off"></div>
           <div id="endpoint-fields" class="connection-endpoint-fields">
