@@ -41,12 +41,12 @@
     <section id="settings-page" class="settings-page" aria-label="模型与连接" hidden><div class="settings-content">
 
       <div id="settings-load-error" class="settings-load-error" role="status" hidden></div>
-      <div class="connections-heading"><span>已保存的连接</span><small id="connection-count"></small></div><div id="connections-list" class="connections-list"></div>
-      <div id="connection-editor-home" hidden><section id="connection-editor" class="connection-editor" aria-labelledby="connection-editor-title" hidden><div class="connection-editor-heading"><h2 id="connection-editor-title">添加模型连接</h2><span id="connection-type-label" class="connection-type-label" hidden></span></div><p id="connection-editor-hint" class="connection-editor-intro">保存后即可让子代理使用此连接。</p>
+      <div id="connections-list" class="connections-list"></div>
+      <div id="connection-editor-home" hidden><section id="connection-editor" class="connection-editor" hidden>
       <form id="connection-form">
         <div class="settings-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="80" required placeholder="例如：我的本地 Qwen / 公司模型路由"></div>
         <div id="connection-kind-field" class="settings-field"><label for="connection-kind">接入方式</label><select id="connection-kind"><option value="api" selected>模型 API 连接</option><option value="profile">已有 Codex profile</option></select></div>
-        <div id="profile-fields" class="settings-field" hidden><label for="connection-profile">已有 profile 名称</label><input id="connection-profile" pattern="[A-Za-z0-9_-]{1,80}" maxlength="80" placeholder="例如：workbuddy" autocomplete="off"><details class="field-help"><summary>profile 使用说明</summary><p>引用本机已有的 Codex profile；这里不会创建或修改该 profile。是否可用需通过实际任务验证。</p></details></div>
+        <div id="profile-fields" class="settings-field" hidden><label for="connection-profile">profile 名称</label><input id="connection-profile" pattern="[A-Za-z0-9_-]{1,80}" maxlength="80" placeholder="例如 deepseek.config.toml 填写 deepseek" autocomplete="off"></div>
         <div id="endpoint-fields">
           <div class="settings-field"><label for="connection-protocol">接口协议</label><select id="connection-protocol"><option value="responses">Responses API</option><option value="chat_completions">Chat Completions（本机适配）</option></select><details class="field-help"><summary>接口要求</summary><p>支持 OpenAI 兼容接口。模型还需支持工具调用，才能执行代理任务。</p></details></div>
           <div class="settings-field"><label for="connection-base-url">API 根地址</label><input id="connection-base-url" type="url" placeholder="https://your-model-service.example/v1" autocomplete="off"><p>填写 API 根地址；无需追加 /responses 或 /chat/completions。</p></div>

@@ -143,15 +143,11 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     editorOpen = expand; initialized = true;
     if (editingId !== connection?.id) { discoveredCapabilities = {}; discoveredModels = []; }
     editingId = connection?.id || null;
-    $('connection-editor-title').textContent = connection ? '编辑连接' : '添加模型连接';
-    $('connection-editor-hint').textContent = connection?.kind === 'profile' ? '直接使用本机已有 profile 启动子代理。' : '本地服务、远程 API 和代理路由使用同一套连接设置。保存后，子 CLI 通过临时参数使用此连接。';
     $('connection-form').reset();
     $('connection-name').value = connection?.name || '';
     $('connection-kind').value = connection?.kind === 'profile' ? 'profile' : 'api';
     $('connection-kind').disabled = Boolean(connection);
     $('connection-kind-field').hidden = Boolean(connection);
-    $('connection-type-label').hidden = !connection;
-    $('connection-type-label').textContent = connection?.kind === 'profile' ? 'Codex profile' : 'API 连接';
     $('reasoning-preview').open = false;
     $('connection-protocol').value = connection?.protocol === 'chat_completions' ? 'chat_completions' : 'responses';
     $('connection-base-url').value = connection?.base_url || '';
@@ -179,7 +175,6 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   }
   function renderCards() {
     if (!config) return;
-    $('connection-count').textContent = `${config.connections.length} 个连接`;
     $('remove-connection').disabled = editingId === config.default_connection_id;
     $('remove-connection').title = editingId === config.default_connection_id ? '先选择另一个默认连接，才能移除此连接' : '移除模型连接';
     // Park the shared form before replacing the rows so its values and listeners survive.
@@ -190,7 +185,10 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       const expanded = editorOpen && editingId === (connection?.id || null);
       const card = el('article', `connection-card${expanded ? ' selected' : ''}`); card.id = `connection-row-${id}`;
       const heading = el('div', 'connection-row'), info = el('div', 'connection-row-info');
-      const title = el('span', 'connection-card-title', name); title.title = name; info.append(title);
+      const title = el('span', 'connection-card-title', name);
+      title.id = `connection-title-${id}`;
+      title.title = name;
+      info.append(title);
       if (connection) {
         info.append(el('span', 'connection-card-meta', protocols[connection.protocol]));
         const model = el('span', 'connection-card-model', connection.default_model || ''); model.title = connection.default_model || ''; info.append(model);
@@ -218,7 +216,11 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
         ($(`connection-toggle-${id}`) || $('new-connection')).focus();
       });
       actions.append(toggle); heading.append(actions); card.append(heading);
-      if (expanded) { card.append(editor); editor.hidden = false; }
+      if (expanded) {
+        editor.setAttribute('aria-labelledby', title.id);
+        card.append(editor);
+        editor.hidden = false;
+      }
       return card;
     }
     if (editorOpen && !editingId) fragment.append(row());
@@ -297,8 +299,25 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     async show() {
       $('settings-page').hidden = false;
       $('new-connection').hidden = false;
-      try { config = await api('/api/config'); $('settings-load-error').hidden = true; if (initialized && !editingId) renderCards(); else populate(config.connections.find(c => c.id === editingId) || config.connections.find(c => c.id === config.default_connection_id), editorOpen); }
-      catch (error) { $('settings-load-error').textContent = error.message; $('settings-load-error').hidden = false; }
+      try {
+        config = await api('/api/config');
+        const profileInput = $('connection-profile');
+        const example = '例如 deepseek.config.toml 填写 deepseek';
+        const hint = config.codex_home ? `文件位于 ${config.codex_home}，${example}` : example;
+        profileInput.placeholder = hint;
+        profileInput.title = hint;
+        $('settings-load-error').hidden = true;
+        if (initialized && !editingId) {
+          renderCards();
+        } else {
+          const connection = config.connections.find(c => c.id === editingId)
+            || config.connections.find(c => c.id === config.default_connection_id);
+          populate(connection, editorOpen);
+        }
+      } catch (error) {
+        $('settings-load-error').textContent = error.message;
+        $('settings-load-error').hidden = false;
+      }
     },
     hide() { selects.close(); $('settings-page').hidden = true; $('new-connection').hidden = true; },
   };

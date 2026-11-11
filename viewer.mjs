@@ -41,7 +41,10 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
       }
       const inference = url.pathname.match(/^\/inference\/([A-Za-z0-9_-]+)\/v1\/responses$/);
       if (inference && request.method === 'POST') { await gateway.handle(request, response, inference[1]); return; }
-      if (url.pathname === '/api/config' && request.method === 'GET') { send(200, store.publicConfig()); return; }
+      if (url.pathname === '/api/config' && request.method === 'GET') {
+        send(200, { ...store.publicConfig(), codex_home: repository.codexHome });
+        return;
+      }
       if (url.pathname === '/reasoning.js' && request.method === 'GET') { send(200, readFileSync(join(root, 'reasoning.mjs')), 'text/javascript; charset=utf-8'); return; }
       if (url.pathname === '/api/config/connections' && request.method === 'POST') { send(200, store.save(await readJSON(request))); return; }
       if (url.pathname === '/api/config/default' && request.method === 'PATCH') { const body = await readJSON(request); send(200, store.setDefault(body.connection_id, body.model)); return; }

@@ -82,7 +82,7 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.ok(!$('settings-load-error').textContent, $('settings-load-error').textContent);
   assert.ok(document.querySelectorAll('header')[0].contains($('new-connection')), 'Add connection belongs to the top bar');
   assert.equal($('new-connection').hidden, false); settings.hide(); assert.equal($('new-connection').hidden, true); await settings.show();
-  assert.equal($('connection-kind-field').hidden, true); assert.equal($('connection-type-label').textContent, 'API 连接');
+  assert.equal($('connection-kind-field').hidden, true);
   assert.equal($('reasoning-preview').open, false);
   assert.ok($('connections-list').querySelectorAll('select').every(select => $('connection-editor').contains(select)), 'Selection controls belong to the expanded form');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 1);
@@ -111,10 +111,11 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   await $('connection-form').dispatch('submit'); await eventually(() => saved === 2 && !$('save-connection').disabled);
   assert.equal(store.get(c.id).default_model, 'a'); assert.equal(store.get(c.id).model_reasoning.b, undefined); assert.deepEqual(store.get(c.id).model_reasoning.d, {});
   await $('new-connection').dispatch('click');
-  assert.equal($('connection-kind-field').hidden, false); assert.equal($('connection-kind').disabled, false); assert.equal($('connection-type-label').hidden, true);
+  assert.equal($('connection-kind-field').hidden, false); assert.equal($('connection-kind').disabled, false);
   const profile = store.publicConfig().connections.find(connection => connection.kind === 'profile');
   await $(`connection-toggle-${profile.id}`).dispatch('click');
-  assert.equal($('connection-kind-field').hidden, true); assert.equal($('connection-type-label').textContent, 'Codex profile');
+  assert.equal($('connection-kind-field').hidden, true);
+  assert.equal($('connection-profile').placeholder, `文件位于 ${join(store.stateDir, 'codex')}，例如 deepseek.config.toml 填写 deepseek`);
   assert.equal($('connection-kind-value').textContent, '已有 Codex profile');
   assert.equal($('connection-protocol-trigger').disabled, true);
   assert.equal($(`connection-toggle-${c.id}`).getAttribute('aria-expanded'), 'false');
