@@ -45,7 +45,11 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
         send(200, { ...store.publicConfig(), codex_home: repository.codexHome });
         return;
       }
-      if (url.pathname === '/reasoning.js' && request.method === 'GET') { send(200, readFileSync(join(root, 'reasoning.mjs')), 'text/javascript; charset=utf-8'); return; }
+      if (request.method === 'GET' && ['/reasoning.js', '/api-endpoint.js'].includes(url.pathname)) {
+        const moduleFile = url.pathname.slice(1, -3) + '.mjs';
+        send(200, readFileSync(join(root, moduleFile)), 'text/javascript; charset=utf-8');
+        return;
+      }
       if (url.pathname === '/api/config/connections' && request.method === 'POST') { send(200, store.save(await readJSON(request))); return; }
       if (url.pathname === '/api/config/default' && request.method === 'PATCH') { const body = await readJSON(request); send(200, store.setDefault(body.connection_id, body.model)); return; }
       if (url.pathname === '/api/config/discover' && request.method === 'POST') { const body = await readJSON(request); send(200, await gateway.discover(body.connection, body.connection_id || null)); return; }

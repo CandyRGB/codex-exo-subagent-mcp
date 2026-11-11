@@ -48,10 +48,16 @@
         <div id="connection-kind-field" class="settings-field"><label for="connection-kind">接入方式</label><select id="connection-kind"><option value="api" selected>模型 API 连接</option><option value="profile">已有 Codex profile</option></select></div>
         <div id="profile-fields" class="settings-field" hidden><label for="connection-profile">profile 名称</label><input id="connection-profile" pattern="[A-Za-z0-9_-]{1,80}" maxlength="80" placeholder="例如 deepseek.config.toml 填写 deepseek" autocomplete="off"></div>
         <div id="endpoint-fields">
-          <div class="settings-field"><label for="connection-protocol">接口协议</label><select id="connection-protocol"><option value="responses">Responses API</option><option value="chat_completions">Chat Completions（本机适配）</option></select><details class="field-help"><summary>接口要求</summary><p>支持 OpenAI 兼容接口。模型还需支持工具调用，才能执行代理任务。</p></details></div>
-          <div class="settings-field"><label for="connection-base-url">API 根地址</label><input id="connection-base-url" type="url" placeholder="https://your-model-service.example/v1" autocomplete="off"><p>填写 API 根地址；无需追加 /responses 或 /chat/completions。</p></div>
-          <div class="connection-form-grid"><div class="settings-field"><label for="connection-auth">认证方式</label><select id="connection-auth"><option value="none">无需认证</option><option value="stored">保存 API Key（本机加密）</option><option value="env">从环境变量读取</option></select></div><div class="settings-field"><label for="connection-auth-header">认证请求头</label><input id="connection-auth-header" value="Authorization" placeholder="Authorization"><details class="field-help"><summary>认证请求头说明</summary><p>Authorization 自动使用 Bearer；也支持 X-API-Key。</p></details></div></div>
-          <div id="stored-auth-field" class="settings-field" hidden><label for="connection-api-key">API Key</label><div class="key-row"><input id="connection-api-key" type="password" autocomplete="new-password" maxlength="8192" placeholder="输入此服务的 API Key"><label class="settings-checkbox"><input id="show-api-key" type="checkbox">显示</label></div><details class="field-help"><summary>密钥保存方式</summary><p>使用当前 Windows 用户加密保存。保存后不回显，也不写入会话记录。</p></details></div>
+          <div class="settings-field">
+            <label for="connection-protocol">接口协议</label>
+            <select id="connection-protocol"><option value="responses">Responses API</option><option value="chat_completions">Chat Completions（本机适配）</option></select>
+          </div>
+          <div class="settings-field">
+            <label for="connection-base-url">API 主机</label>
+            <input id="connection-base-url" type="url" placeholder="https://your-model-service.example/v1" autocomplete="off" aria-describedby="connection-endpoint-preview">
+            <p id="connection-endpoint-preview" class="endpoint-preview" hidden></p>
+          </div>
+          <div id="stored-auth-field" class="settings-field" hidden><label for="connection-api-key">API Key</label><div class="key-row"><input id="connection-api-key" type="password" autocomplete="new-password" maxlength="8192" placeholder="输入此服务的 API Key"><label class="settings-checkbox"><input id="show-api-key" type="checkbox">显示</label></div></div>
           <div id="env-auth-field" class="settings-field" hidden><label for="connection-env-var">环境变量名称</label><input id="connection-env-var" placeholder="MY_MODEL_API_KEY" autocomplete="off"><details class="field-help"><summary>环境变量说明</summary><p>填写名称，勿填写密钥内容。环境变量需对本地服务进程可见。</p></details></div>
         </div>
         <div class="settings-field"><div class="field-heading"><label for="model-id-input">模型</label><button id="discover-models" type="button" class="text-button">获取模型列表</button></div>
@@ -59,6 +65,17 @@
           <div class="model-table-scroll"><table class="model-table"><thead><tr><th scope="col">模型 ID</th><th scope="col">默认</th><th scope="col">操作</th></tr></thead><tbody id="model-rows"></tbody></table></div>
         </div>
         <details id="connection-advanced" class="connection-advanced"><summary>高级设置</summary>
+          <div class="connection-form-grid">
+            <div class="settings-field">
+              <label for="connection-auth">认证方式</label>
+              <select id="connection-auth"><option value="none">无需认证</option><option value="stored">API Key（本机加密）</option><option value="env">从环境变量读取</option></select>
+            </div>
+            <div class="settings-field">
+              <label for="connection-auth-header">认证请求头</label>
+              <input id="connection-auth-header" value="Authorization" placeholder="Authorization">
+              <p>Authorization 使用 Bearer 格式，也支持 X-API-Key。</p>
+            </div>
+          </div>
           <div class="settings-field"><label for="connection-context-window">上下文窗口（token）</label><input id="connection-context-window" type="number" min="2048" max="4000000" placeholder="使用 CLI 默认值"><p>按实际部署容量设置。</p></div>
           <div class="reasoning-editor">
             <div class="reasoning-heading"><strong id="reasoning-scope-label">连接默认思考设置</strong><button id="reasoning-defaults" type="button" class="text-button" hidden>编辑连接默认值</button></div>

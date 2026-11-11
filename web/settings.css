@@ -20,3 +20,10 @@
 
 .connection-row{display:flex;align-items:center;gap:12px;min-height:62px;padding:12px 16px}.connection-row-info{display:flex;align-items:center;gap:18px;flex:1;min-width:0}.connection-card-model{max-width:35%;min-width:0;font:10px Consolas,monospace;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.connection-row-actions{display:flex;align-items:center;gap:10px;flex:none}.connection-expand{width:34px;height:34px}.connection-expand-arrow{width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin-top:-4px}.connection-expand[aria-expanded=true] .connection-expand-arrow{transform:rotate(225deg);margin-top:4px}
 @media(max-width:760px){.connection-row{gap:8px;padding:10px 12px;min-height:56px}.connection-row-info{gap:8px}.connection-card-meta,.connection-card-model{display:none}.connection-row-actions{gap:5px}.connection-row-actions .set-default-button{font-size:9px;padding:5px 6px}}
+
+.endpoint-preview {
+  overflow-wrap: anywhere;
+}
+.settings-field .endpoint-preview.invalid {
+  color: var(--orange);
+}

@@ -1,6 +1,7 @@
 import { applyReasoning, normalizeReasoning } from './reasoning.js';
 import { ModelSelection } from './model-selection.js';
 import { createSelectMenus } from './dropdown.js';
+import { inferenceEndpoint, normalizeApiBaseUrl } from './api-endpoint.js';
 const $ = id => document.getElementById(id);
 const el = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
 const protocols = { profile: 'Codex profile', responses: 'Responses', chat_completions: 'Chat Completions' };
@@ -98,6 +99,21 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('reasoning-settings-fields').disabled = $('connection-kind').value === 'profile' || Boolean(reasoningScope && !independent);
     previewReasoning();
   }
+  function previewEndpoint() {
+    const preview = $('connection-endpoint-preview');
+    const value = $('connection-base-url').value.trim();
+    preview.hidden = !value;
+    preview.textContent = '';
+    preview.className = 'endpoint-preview';
+    if (!value) return;
+    try {
+      const baseUrl = normalizeApiBaseUrl(value);
+      preview.textContent = `预览 ${inferenceEndpoint(baseUrl, $('connection-protocol').value)}`;
+    } catch (error) {
+      preview.textContent = error.message;
+      preview.className = 'endpoint-preview invalid';
+    }
+  }
   function syncFields() {
     const profile = $('connection-kind').value === 'profile'; const auth = $('connection-auth').value;
     $('endpoint-fields').hidden = profile; $('profile-fields').hidden = !profile;
@@ -110,21 +126,29 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('stored-auth-field').hidden = auth !== 'stored'; $('env-auth-field').hidden = auth !== 'env';
     $('connection-env-var').required = !profile && auth === 'env';
     const existing = config?.connections.find(c => c.id === editingId);
-    $('connection-api-key').required = !profile && auth === 'stored' && !existing?.has_api_key;
+    $('connection-api-key').required = !profile && auth === 'stored' && existing?.auth_mode === 'stored' && !existing.has_api_key;
     $('discover-models').hidden = profile;
     $('test-connection').textContent = profile ? '检查配置' : '测试连接';
     $('connection-test-hint').textContent = profile ? '此连接沿用已有 Codex 配置，检查不会调用模型。' : '连接测试使用默认模型及其思考设置，可能计入该服务的用量。';
     $('reasoning-settings-fields').disabled = profile || Boolean(reasoningScope && !$('reasoning-model-override').checked);
     renderModels();
     selects.refresh();
+    previewEndpoint();
   }
   function draft() {
     saveReasoningScope();
+    const existing = config?.connections.find(c => c.id === editingId);
+    const kind = $('connection-kind').value === 'profile' ? 'profile' : existing?.kind || 'api';
+    let authMode = kind === 'profile' ? 'none' : $('connection-auth').value;
+    const apiKey = authMode === 'stored' ? $('connection-api-key').value.trim() : '';
+    if (authMode === 'stored' && !apiKey && !existing?.has_api_key && existing?.auth_mode !== 'stored') {
+      authMode = 'none';
+    }
     return {
-      name: $('connection-name').value.trim(), kind: $('connection-kind').value === 'profile' ? 'profile' : config?.connections.find(c => c.id === editingId)?.kind || 'api',
+      name: $('connection-name').value.trim(), kind,
       profile: $('connection-profile').value.trim(),
       protocol: $('connection-protocol').value, base_url: $('connection-base-url').value.trim(),
-      auth_mode: $('connection-auth').value, api_key: $('connection-api-key').value,
+      auth_mode: authMode, api_key: apiKey,
       api_key_env: $('connection-env-var').value.trim(), auth_header: $('connection-auth-header').value.trim(),
       models: [...modelsOf()], default_model: selection.defaultModel,
       context_window: $('connection-context-window').value, ...reasoningDefaults,
@@ -148,13 +172,16 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('connection-kind').value = connection?.kind === 'profile' ? 'profile' : 'api';
     $('connection-kind').disabled = Boolean(connection);
     $('connection-kind-field').hidden = Boolean(connection);
+    $('connection-advanced').open = false;
     $('reasoning-preview').open = false;
     $('connection-protocol').value = connection?.protocol === 'chat_completions' ? 'chat_completions' : 'responses';
     $('connection-base-url').value = connection?.base_url || '';
-    $('connection-auth').value = connection?.auth_mode || 'none';
-    $('connection-auth').querySelector('option[value="stored"]').disabled = !config?.secret_storage_supported;
+    const supportsStoredKey = config?.secret_storage_supported;
+    const savedAuthMode = connection?.auth_mode || 'none';
+    $('connection-auth').value = savedAuthMode === 'none' && supportsStoredKey && connection?.kind !== 'profile' ? 'stored' : savedAuthMode;
+    $('connection-auth').querySelector('option[value="stored"]').disabled = !supportsStoredKey;
     $('connection-api-key').value = '';
-    $('connection-api-key').placeholder = connection?.has_api_key ? '已加密保存；留空保持现有密钥' : '输入此服务的 API Key';
+    $('connection-api-key').placeholder = connection?.has_api_key ? '已加密保存，留空保留密钥' : '可留空';
     $('connection-api-key').type = 'password'; $('show-api-key').checked = false;
     $('connection-env-var').value = connection?.api_key_env || '';
     $('connection-auth-header').value = connection?.auth_header || 'Authorization';
@@ -257,6 +284,8 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   $('reasoning-defaults').addEventListener('click', () => { saveReasoningScope(); reasoningScope = ''; loadReasoningScope(); renderModels(); });
   $('reasoning-model-override').addEventListener('change', () => { saveReasoningScope(); loadReasoningScope(); });
   for (const id of ['connection-reasoning', 'connection-thinking-format', 'connection-thinking-mode', 'connection-thinking-budget', 'connection-protocol']) $(id).addEventListener('input', previewReasoning);
+  $('connection-protocol').addEventListener('input', previewEndpoint);
+  $('connection-base-url').addEventListener('input', previewEndpoint);
   $('connection-auth').addEventListener('change', syncFields);
   $('connection-kind').addEventListener('change', syncFields);
   $('show-api-key').addEventListener('change', () => { $('connection-api-key').type = $('show-api-key').checked ? 'text' : 'password'; });

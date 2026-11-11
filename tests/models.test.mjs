@@ -54,7 +54,8 @@ test('configuration preserves the current profile and supports explicit defaults
 });
 
 test('settings controller unifies models, preserves per-model drafts and tests only saved settings', async t => {
-  const store = new ModelStore({ stateDir: fixture() });
+  const codec = { supported: true, protect: value => Buffer.from(value).toString('base64') };
+  const store = new ModelStore({ stateDir: fixture(), codec });
   const c = save(store, { models: ['a', 'b'], default_model: 'a', reasoning_effort: 'high', model_reasoning: { b: { reasoning_effort: 'max' } } }); store.setDefault(c.id, 'a');
   const v = await viewer(t, store); let probes = 0, saved = 0;
   v.gateway.probe = async (id, model) => { probes++; return { ok: true, tool_calling: true, message: `TEST ${model}` }; };
@@ -64,7 +65,11 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   globalThis.document = document; globalThis.fetch = (url, options) => originalFetch(typeof url === 'string' && url.startsWith('/') ? v.url + url : url, options);
   t.after(() => { globalThis.document = originalDocument; globalThis.fetch = originalFetch; });
   let source = readFileSync(fileURLToPath(new URL('../web/settings.js', import.meta.url)), 'utf8');
-  source = source.replace('./reasoning.js', new URL('../reasoning.mjs', import.meta.url).href).replace('./model-selection.js', new URL('../web/model-selection.js', import.meta.url).href).replace('./dropdown.js', new URL('../web/dropdown.js', import.meta.url).href);
+  source = source
+    .replace('./reasoning.js', new URL('../reasoning.mjs', import.meta.url).href)
+    .replace('./model-selection.js', new URL('../web/model-selection.js', import.meta.url).href)
+    .replace('./dropdown.js', new URL('../web/dropdown.js', import.meta.url).href)
+    .replace('./api-endpoint.js', new URL('../api-endpoint.mjs', import.meta.url).href);
   const { createModelSettings } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
   const settings = createModelSettings({ toast() {}, onSaved() { saved++; } }); await settings.show();
   const $ = id => document.getElementById(id);
@@ -79,6 +84,9 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   await $(`connection-toggle-${c.id}`).dispatch('click'); assert.equal($('connection-name').value, 'Unsaved name', 'Collapse and reopen retain the draft');
   $('connection-name').value = initialName;
   assert.equal($('connection-protocol-value').textContent, 'Chat Completions（本机适配）');
+  assert.equal($('connection-endpoint-preview').textContent, '预览 http://127.0.0.1:1/v1/chat/completions');
+  assert.equal($('stored-auth-field').hidden, false);
+  assert.equal($('connection-api-key').required, false);
   assert.ok(!$('settings-load-error').textContent, $('settings-load-error').textContent);
   assert.ok(document.querySelectorAll('header')[0].contains($('new-connection')), 'Add connection belongs to the top bar');
   assert.equal($('new-connection').hidden, false); settings.hide(); assert.equal($('new-connection').hidden, true); await settings.show();
@@ -100,8 +108,13 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   await $('connection-protocol-trigger').dispatch('click');
   await $('settings-select-menu').children.find(option => option.textContent === 'Responses API').dispatch('click');
   assert.equal($('connection-protocol').value, 'responses');
+  $('connection-base-url').value = 'http://127.0.0.1:1/v1/chat/completions/';
+  await $('connection-base-url').dispatch('input');
+  assert.equal($('connection-endpoint-preview').textContent, '预览 http://127.0.0.1:1/v1/responses');
   await $('connection-form').dispatch('submit'); await eventually(() => saved === 1 && !$('save-connection').disabled);
   assert.equal(store.get(c.id).protocol, 'responses', 'Choosing from the styled menu reaches the saved configuration');
+  assert.equal(store.get(c.id).base_url, 'http://127.0.0.1:1/v1');
+  assert.equal(store.get(c.id).auth_mode, 'none');
   assert.deepEqual(store.get(c.id).models, ['a', 'b', 'c', 'd']); assert.equal(store.get(c.id).default_model, 'b');
   assert.equal(store.get(c.id).model_reasoning.b.reasoning_effort, 'provider:max'); assert.equal(probes, 2, 'Saving does not run inference');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 3); assert.match($('connection-test-result').textContent, /TEST b/);
@@ -122,10 +135,14 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal($(`connection-row-${profile.id}`).contains($('connection-editor')), true);
   await $('new-connection').dispatch('click'); $('connection-name').value = 'Created from row';
   $('connection-base-url').value = 'http://127.0.0.1:11434/v1'; $('model-id-input').value = 'new-model'; await $('add-model').dispatch('click');
+  $('connection-api-key').value = 'fixture-key';
   await $('connection-toggle-new').dispatch('click'); assert.equal($('connection-row-new'), undefined);
   await $('new-connection').dispatch('click'); assert.equal($('connection-name').value, 'Created from row');
   await $('connection-form').dispatch('submit'); await eventually(() => saved === 3 && !$('save-connection').disabled);
   const created = store.read().connections.find(connection => connection.name === 'Created from row'); assert.ok(created);
+  assert.equal(created.auth_mode, 'stored', 'Typing a key in the main form enables saved-key authentication');
+  assert.equal($('connection-api-key').value, '');
+  assert.equal($('connection-api-key').required, false, 'Editing an existing saved key may leave the field blank');
   assert.equal($('connection-row-new'), undefined); assert.equal($(`connection-row-${created.id}`).contains($('connection-editor')), true);
   await $('remove-connection').dispatch('click'); await $('confirm-remove-connection').dispatch('click');
   assert.equal(store.read().connections.some(connection => connection.id === created.id), false); assert.equal($('connection-editor').hidden, true);

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { normalizeReasoning } from './reasoning.mjs';
+import { normalizeApiBaseUrl } from './api-endpoint.mjs';
 
 const validId = /^[a-zA-Z0-9_-]{1,80}$/;
 const fail = message => { throw Object.assign(new Error(message), { status: 400 }); };
@@ -74,10 +75,7 @@ export class ModelStore {
       return connection;
     }
     if (!['responses', 'chat_completions'].includes(input.protocol)) fail('请选择 Responses 或 Chat Completions 协议。');
-    let url;
-    try { url = new URL(input.base_url); } catch { fail('API 地址无效，请填写完整的 http:// 或 https:// 地址。'); }
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) fail('API 地址只能使用 HTTP/HTTPS，不能包含账号、密钥、查询参数或片段。');
-    connection.base_url = url.href.replace(/\/+$/, '').replace(/\/(?:chat\/completions|responses)$/, '');
+    connection.base_url = normalizeApiBaseUrl(input.base_url);
     connection.protocol = input.protocol;
     connection.auth_mode = input.auth_mode || 'none';
     if (!['none', 'env', 'stored'].includes(connection.auth_mode)) fail('请选择有效的认证方式。');

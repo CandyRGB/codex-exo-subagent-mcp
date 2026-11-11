@@ -2,6 +2,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { once } from 'node:events';
 import { safeError } from './model-store.mjs';
 import { applyReasoning, effectiveReasoning, reasoningCapabilities } from './reasoning.mjs';
+import { inferenceEndpoint } from './api-endpoint.mjs';
 
 async function fetchUpstream(url, options) {
   try { return await fetch(url, options); }
@@ -192,7 +193,7 @@ export class ModelGateway {
       const body = await readJSON(request, 64_000_000);
       const auth = this.store.headers(connection); secret = auth.secret;
       if (connection.protocol === 'responses') {
-        const upstream = await fetchUpstream(connection.base_url + '/responses', { method: 'POST', headers: auth.headers, body: JSON.stringify(applyReasoning(body, connection)), redirect: 'error', signal: controller.signal });
+        const upstream = await fetchUpstream(inferenceEndpoint(connection.base_url, connection.protocol), { method: 'POST', headers: auth.headers, body: JSON.stringify(applyReasoning(body, connection)), redirect: 'error', signal: controller.signal });
         if (!upstream.ok) { const error = await upstream.text(); throw Object.assign(new Error(`上游接口 ${upstream.status}: ${error.slice(0, 2000)}`), { status: upstream.status >= 400 && upstream.status <= 599 ? upstream.status : 502 }); }
         response.writeHead(200, { 'Content-Type': upstream.headers.get('content-type') || 'text/event-stream', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
         for await (const chunk of upstream.body) { if (!response.write(chunk)) await once(response, 'drain'); }
@@ -211,7 +212,7 @@ export class ModelGateway {
     const converted = responsesToChat(body, cached?.messages || []);
     const tools = converted.tools;
     const request = applyReasoning(converted.request, connection);
-    const send = () => fetchUpstream(connection.base_url + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(request), redirect: 'error', signal });
+    const send = () => fetchUpstream(inferenceEndpoint(connection.base_url, connection.protocol), { method: 'POST', headers, body: JSON.stringify(request), redirect: 'error', signal });
     let upstream = await send();
     if (!upstream.ok) {
       const error = await upstream.text();

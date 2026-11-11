@@ -156,6 +156,7 @@ test('HTTP serves real histories and assets; rejects foreign origins, DNS rebind
   assert.equal((await fetch(base + '/')).status, 200);
   assert.equal((await fetch(base + '/app.js')).status, 200);
   assert.equal((await fetch(base + '/dropdown.js')).status, 200);
+  assert.equal((await fetch(base + '/api-endpoint.js')).status, 200);
   assert.equal((await (await fetch(base + '/api/sessions')).json()).sessions.length, 1);
   const detail = await fetch(`${base}/api/sessions/${native.id}`); const etag = detail.headers.get('etag'); await detail.json();
   assert.equal((await fetch(`${base}/api/sessions/${native.id}`, { headers: { 'If-None-Match': etag } })).status, 304);
