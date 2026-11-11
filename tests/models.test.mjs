@@ -54,7 +54,11 @@ test('configuration preserves the current profile and supports explicit defaults
 });
 
 test('settings controller unifies models, preserves per-model drafts and tests only saved settings', async t => {
-  const codec = { supported: true, protect: value => Buffer.from(value).toString('base64') };
+  const codec = {
+    supported: true,
+    protect: value => Buffer.from(value).toString('base64'),
+    unprotect: value => Buffer.from(value, 'base64').toString(),
+  };
   const store = new ModelStore({ stateDir: fixture(), codec });
   const c = save(store, { models: ['a', 'b'], default_model: 'a', reasoning_effort: 'high', model_reasoning: { b: { reasoning_effort: 'max' } } }); store.setDefault(c.id, 'a');
   const v = await viewer(t, store); let probes = 0, saved = 0;
@@ -83,8 +87,8 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   await $(`connection-toggle-${c.id}`).dispatch('click'); assert.equal($('connection-editor').hidden, true);
   await $(`connection-toggle-${c.id}`).dispatch('click'); assert.equal($('connection-name').value, 'Unsaved name', 'Collapse and reopen retain the draft');
   $('connection-name').value = initialName;
-  assert.equal($('connection-protocol-value').textContent, 'Chat Completions（本机适配）');
-  assert.equal($('connection-endpoint-preview').textContent, '预览 http://127.0.0.1:1/v1/chat/completions');
+  assert.equal($('connection-protocol-value').textContent, 'Chat Completions');
+  assert.equal($('connection-endpoint-preview').textContent, '预览: http://127.0.0.1:1/v1/chat/completions');
   assert.equal($('stored-auth-field').hidden, false);
   assert.equal($('connection-api-key').required, false);
   assert.ok(!$('settings-load-error').textContent, $('settings-load-error').textContent);
@@ -110,7 +114,7 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal($('connection-protocol').value, 'responses');
   $('connection-base-url').value = 'http://127.0.0.1:1/v1/chat/completions/';
   await $('connection-base-url').dispatch('input');
-  assert.equal($('connection-endpoint-preview').textContent, '预览 http://127.0.0.1:1/v1/responses');
+  assert.equal($('connection-endpoint-preview').textContent, '预览: http://127.0.0.1:1/v1/responses');
   await $('connection-form').dispatch('submit'); await eventually(() => saved === 1 && !$('save-connection').disabled);
   assert.equal(store.get(c.id).protocol, 'responses', 'Choosing from the styled menu reaches the saved configuration');
   assert.equal(store.get(c.id).base_url, 'http://127.0.0.1:1/v1');
@@ -136,13 +140,45 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   await $('new-connection').dispatch('click'); $('connection-name').value = 'Created from row';
   $('connection-base-url').value = 'http://127.0.0.1:11434/v1'; $('model-id-input').value = 'new-model'; await $('add-model').dispatch('click');
   $('connection-api-key').value = 'fixture-key';
+  await $('show-api-key').dispatch('click');
+  assert.equal($('connection-api-key').type, 'text');
   await $('connection-toggle-new').dispatch('click'); assert.equal($('connection-row-new'), undefined);
   await $('new-connection').dispatch('click'); assert.equal($('connection-name').value, 'Created from row');
+  assert.equal($('connection-api-key').type, 'password');
+  assert.equal($('connection-api-key').value, 'fixture-key', 'Hiding a new key preserves the draft');
   await $('connection-form').dispatch('submit'); await eventually(() => saved === 3 && !$('save-connection').disabled);
   const created = store.read().connections.find(connection => connection.name === 'Created from row'); assert.ok(created);
   assert.equal(created.auth_mode, 'stored', 'Typing a key in the main form enables saved-key authentication');
   assert.equal($('connection-api-key').value, '');
   assert.equal($('connection-api-key').required, false, 'Editing an existing saved key may leave the field blank');
+  const revealUrl = `${v.url}/api/config/connections/${created.id}/reveal-key`;
+  const revealOptions = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' };
+  assert.equal((await originalFetch(revealUrl)).status, 404);
+  assert.equal((await originalFetch(revealUrl, { method: 'POST', body: '{}' })).status, 415);
+  assert.equal((await originalFetch(revealUrl, {
+    ...revealOptions, headers: { ...revealOptions.headers, Origin: 'https://foreign.test' },
+  })).status, 403);
+  assert.equal((await originalFetch(`${v.url}/api/config/connections/${c.id}/reveal-key`, revealOptions)).status, 404);
+  assert.ok(!(await (await originalFetch(v.url + '/api/config')).text()).includes('fixture-key'));
+  await $('show-api-key').dispatch('click');
+  assert.equal($('connection-api-key').value, 'fixture-key');
+  assert.equal($('connection-api-key').type, 'text');
+  await $('test-connection').dispatch('click');
+  await eventually(() => !$('save-connection').disabled);
+  assert.equal(probes, 4, 'Revealing an existing key does not mark the form dirty');
+  await $('show-api-key').dispatch('click');
+  assert.equal($('connection-api-key').value, '');
+  assert.equal($('connection-api-key').type, 'password');
+  const pendingReveal = $('show-api-key').dispatch('click');
+  await $(`connection-toggle-${created.id}`).dispatch('click');
+  await pendingReveal;
+  assert.equal($('connection-api-key').value, '', 'A pending reveal cannot repopulate a collapsed editor');
+  await $(`connection-toggle-${created.id}`).dispatch('click');
+  await $('show-api-key').dispatch('click');
+  assert.equal($('connection-api-key').value, 'fixture-key');
+  await $(`connection-toggle-${created.id}`).dispatch('click');
+  assert.equal($('connection-api-key').value, '', 'Closing an expanded editor clears the revealed key');
+  await $(`connection-toggle-${created.id}`).dispatch('click');
   assert.equal($('connection-row-new'), undefined); assert.equal($(`connection-row-${created.id}`).contains($('connection-editor')), true);
   await $('remove-connection').dispatch('click'); await $('confirm-remove-connection').dispatch('click');
   assert.equal(store.read().connections.some(connection => connection.id === created.id), false); assert.equal($('connection-editor').hidden, true);

@@ -53,11 +53,30 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
       if (url.pathname === '/api/config/connections' && request.method === 'POST') { send(200, store.save(await readJSON(request))); return; }
       if (url.pathname === '/api/config/default' && request.method === 'PATCH') { const body = await readJSON(request); send(200, store.setDefault(body.connection_id, body.model)); return; }
       if (url.pathname === '/api/config/discover' && request.method === 'POST') { const body = await readJSON(request); send(200, await gateway.discover(body.connection, body.connection_id || null)); return; }
-      const connectionRoute = url.pathname.match(/^\/api\/config\/connections\/([A-Za-z0-9_-]+)(\/(?:test|export-profile))?$/);
+      const connectionRoute = url.pathname.match(/^\/api\/config\/connections\/([A-Za-z0-9_-]+)(\/(?:test|export-profile|reveal-key))?$/);
       if (connectionRoute) {
         const id = connectionRoute[1];
         if (request.method === 'PUT' && !connectionRoute[2]) { send(200, store.save(await readJSON(request), id)); return; }
         if (request.method === 'DELETE' && !connectionRoute[2]) { send(200, store.remove(id)); return; }
+        if (request.method === 'POST' && connectionRoute[2] === '/reveal-key') {
+          const fetchSite = request.headers['sec-fetch-site'];
+          if ((origin && origin !== `http://${request.headers.host}`) || (fetchSite && fetchSite !== 'same-origin')) {
+            send(403, { error: '只能在本机设置页面查看已保存的密钥。' });
+            return;
+          }
+          if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')) {
+            send(415, { error: 'Expected JSON' });
+            return;
+          }
+          await readJSON(request, 4096);
+          const connection = store.get(id);
+          if (connection.auth_mode !== 'stored') {
+            send(404, { error: '此连接未保存 API Key。' });
+            return;
+          }
+          send(200, { api_key: store.secret(connection) });
+          return;
+        }
         if (request.method === 'POST' && connectionRoute[2] === '/export-profile') { send(200, exportProfile({ store, id, baseUrl: `http://${host}:${boundPort}`, codexHome, moduleDir: root })); return; }
         if (request.method === 'POST' && connectionRoute[2] === '/test') { const body = await readJSON(request); send(200, await gateway.probe(id, body.model)); return; }
       }

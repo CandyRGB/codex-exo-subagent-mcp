@@ -12,12 +12,66 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   let editorOpen = false, initialized = false;
   let reasoningDefaults = {}, modelReasoning = Object.create(null), reasoningScope = '', discoveredCapabilities = {};
   let selection = new ModelSelection(), discoveredModels = [], savedSignature = '';
+  let revealedSavedKey = null;
+  let keyRevealRequest = null;
+  const apiKeyInput = $('connection-api-key');
+  const apiKeyToggle = $('show-api-key');
   const modelsOf = () => selection.models;
   async function api(path, options = {}) {
     const r = await fetch(path, { ...options, signal: options.signal || AbortSignal.timeout(60000) });
     const data = await r.json(); if (!r.ok) throw new Error(data.error || '模型配置操作失败'); return data;
   }
   const payload = value => ({ headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+  function setApiKeyVisible(visible) {
+    apiKeyInput.type = visible ? 'text' : 'password';
+    const label = visible ? '隐藏 API Key' : '显示 API Key';
+    apiKeyToggle.setAttribute('aria-label', label);
+    apiKeyToggle.title = label;
+    $('api-key-visibility-icon').setAttribute('href', visible ? '#i-eye-off' : '#i-eye');
+  }
+  function hideApiKey() {
+    keyRevealRequest?.abort();
+    keyRevealRequest = null;
+    if (apiKeyInput.value.trim() === revealedSavedKey) apiKeyInput.value = '';
+    revealedSavedKey = null;
+    apiKeyToggle.disabled = false;
+    setApiKeyVisible(false);
+  }
+  async function toggleApiKey() {
+    if (apiKeyInput.type === 'text') {
+      hideApiKey();
+      return;
+    }
+    if (busy || keyRevealRequest) return;
+    const connection = config?.connections.find(item => item.id === editingId);
+    if (apiKeyInput.value || !connection?.has_api_key) {
+      setApiKeyVisible(true);
+      return;
+    }
+    const request = new AbortController();
+    keyRevealRequest = request;
+    apiKeyToggle.disabled = true;
+    try {
+      const data = await api(`/api/config/connections/${connection.id}/reveal-key`, {
+        method: 'POST',
+        ...payload({}),
+        mode: 'same-origin',
+        referrerPolicy: 'same-origin',
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(10000)]),
+      });
+      if (keyRevealRequest !== request || apiKeyInput.value) return;
+      revealedSavedKey = data.api_key;
+      apiKeyInput.value = revealedSavedKey;
+      setApiKeyVisible(true);
+    } catch (error) {
+      if (keyRevealRequest === request) toast(error.message);
+    } finally {
+      if (keyRevealRequest === request) {
+        keyRevealRequest = null;
+        apiKeyToggle.disabled = false;
+      }
+    }
+  }
   function result(message = '', ok = true) { const target = $('connection-test-result'); target.hidden = !message; target.textContent = message; target.className = `connection-test-result${ok ? ' success' : ' error'}`; }
   function busyState(value) {
     busy = value;
@@ -108,7 +162,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     if (!value) return;
     try {
       const baseUrl = normalizeApiBaseUrl(value);
-      preview.textContent = `预览 ${inferenceEndpoint(baseUrl, $('connection-protocol').value)}`;
+      preview.textContent = `预览: ${inferenceEndpoint(baseUrl, $('connection-protocol').value)}`;
     } catch (error) {
       preview.textContent = error.message;
       preview.className = 'endpoint-preview invalid';
@@ -116,6 +170,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   }
   function syncFields() {
     const profile = $('connection-kind').value === 'profile'; const auth = $('connection-auth').value;
+    $('connection-primary-fields').setAttribute('data-kind', profile ? 'profile' : 'api');
     $('endpoint-fields').hidden = profile; $('profile-fields').hidden = !profile;
     $('connection-advanced').hidden = profile;
     $('connection-base-url').required = !profile;
@@ -124,6 +179,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     for (const field of $('endpoint-fields').querySelectorAll('input, select')) field.disabled = profile;
     for (const field of $('connection-advanced').querySelectorAll('input, select')) field.disabled = profile;
     $('stored-auth-field').hidden = auth !== 'stored'; $('env-auth-field').hidden = auth !== 'env';
+    if (profile || auth !== 'stored') hideApiKey();
     $('connection-env-var').required = !profile && auth === 'env';
     const existing = config?.connections.find(c => c.id === editingId);
     $('connection-api-key').required = !profile && auth === 'stored' && existing?.auth_mode === 'stored' && !existing.has_api_key;
@@ -140,7 +196,8 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     const existing = config?.connections.find(c => c.id === editingId);
     const kind = $('connection-kind').value === 'profile' ? 'profile' : existing?.kind || 'api';
     let authMode = kind === 'profile' ? 'none' : $('connection-auth').value;
-    const apiKey = authMode === 'stored' ? $('connection-api-key').value.trim() : '';
+    const key = apiKeyInput.value.trim();
+    const apiKey = authMode === 'stored' && key !== revealedSavedKey ? key : '';
     if (authMode === 'stored' && !apiKey && !existing?.has_api_key && existing?.auth_mode !== 'stored') {
       authMode = 'none';
     }
@@ -164,6 +221,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   }
   function populate(connection = null, expand = true) {
     selects.close();
+    hideApiKey();
     editorOpen = expand; initialized = true;
     if (editingId !== connection?.id) { discoveredCapabilities = {}; discoveredModels = []; }
     editingId = connection?.id || null;
@@ -180,9 +238,8 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     const savedAuthMode = connection?.auth_mode || 'none';
     $('connection-auth').value = savedAuthMode === 'none' && supportsStoredKey && connection?.kind !== 'profile' ? 'stored' : savedAuthMode;
     $('connection-auth').querySelector('option[value="stored"]').disabled = !supportsStoredKey;
-    $('connection-api-key').value = '';
-    $('connection-api-key').placeholder = connection?.has_api_key ? '已加密保存，留空保留密钥' : '可留空';
-    $('connection-api-key').type = 'password'; $('show-api-key').checked = false;
+    apiKeyInput.value = '';
+    apiKeyInput.placeholder = connection?.has_api_key ? '已加密保存，留空保留密钥' : '可留空';
     $('connection-env-var').value = connection?.api_key_env || '';
     $('connection-auth-header').value = connection?.auth_header || 'Authorization';
     reasoningDefaults = { reasoning_effort: connection?.reasoning_effort || '', thinking_format: connection?.thinking_format || 'effort', thinking_mode: connection?.thinking_mode || '', thinking_budget: connection?.thinking_budget ?? '' };
@@ -202,6 +259,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   }
   function renderCards() {
     if (!config) return;
+    hideApiKey();
     $('remove-connection').disabled = editingId === config.default_connection_id;
     $('remove-connection').title = editingId === config.default_connection_id ? '先选择另一个默认连接，才能移除此连接' : '移除模型连接';
     // Park the shared form before replacing the rows so its values and listeners survive.
@@ -288,7 +346,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   $('connection-base-url').addEventListener('input', previewEndpoint);
   $('connection-auth').addEventListener('change', syncFields);
   $('connection-kind').addEventListener('change', syncFields);
-  $('show-api-key').addEventListener('change', () => { $('connection-api-key').type = $('show-api-key').checked ? 'text' : 'password'; });
+  apiKeyToggle.addEventListener('click', toggleApiKey);
   $('discover-models').addEventListener('click', async () => {
     if (busy) return;
     const input = draft(); if (!input.name) input.name = '未命名连接';
@@ -348,6 +406,11 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
         $('settings-load-error').hidden = false;
       }
     },
-    hide() { selects.close(); $('settings-page').hidden = true; $('new-connection').hidden = true; },
+    hide() {
+      selects.close();
+      hideApiKey();
+      $('settings-page').hidden = true;
+      $('new-connection').hidden = true;
+    },
   };
 }
