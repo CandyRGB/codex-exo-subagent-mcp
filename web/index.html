@@ -112,7 +112,7 @@
         <div class="settings-field">
           <label for="model-effort-set">思考档位方案</label>
           <select id="model-effort-set">
-            <option value="inherit">继承连接设置</option>
+            <option value="service">服务默认</option>
             <option value="provider">服务声明</option>
             <option value="openai">OpenAI 档位</option>
             <option value="deepseek">DeepSeek 档位</option>
@@ -120,7 +120,10 @@
           </select>
         </div>
         <div id="model-effort-field" class="settings-field" hidden>
-          <label for="model-reasoning">思考强度</label>
+          <div class="field-heading">
+            <label for="model-reasoning">思考强度</label>
+            <button id="read-model-efforts" type="button" class="text-button" hidden>读取档位</button>
+          </div>
           <select id="model-reasoning"><option value="">服务默认</option></select>
         </div>
         <div id="model-custom-effort-field" class="settings-field" hidden>

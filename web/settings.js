@@ -17,7 +17,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   const apiKeyInput = $('connection-api-key');
   const apiKeyToggle = $('show-api-key');
   const modelDialog = $('model-dialog');
-  let modelProbeRequest = null;
+  let modelRequest = null;
   const modelsOf = () => selection.models;
   async function api(path, options = {}) {
     const r = await fetch(path, { ...options, signal: options.signal || AbortSignal.timeout(60000) });
@@ -155,7 +155,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   }
   function readModelReasoning() {
     const set = $('model-effort-set').value;
-    if (set === 'inherit') return null;
+    if (set === 'service') return {};
     const effort = selectedEffort();
     const previous = selection.overrides[editingModel];
     if (previous && (previous.effort_set || 'custom') === set && (previous.reasoning_effort || '') === effort) {
@@ -172,12 +172,13 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     target.textContent = message;
     target.className = `connection-test-result ${ok ? 'success' : 'error'}`;
   }
-  function syncModelEffort(value) {
-    const scheme = $('model-effort-set');
-    const set = scheme.value;
+  function reportedModelEfforts() {
     const model = $('model-id-input').value.trim();
-    const reported = Object.hasOwn(discoveredCapabilities, model) ? discoveredCapabilities[model].efforts || [] : [];
-    scheme.querySelector('option[value="provider"]').disabled = !reported.length && set !== 'provider';
+    return Object.hasOwn(discoveredCapabilities, model) ? discoveredCapabilities[model].efforts || [] : [];
+  }
+  function syncModelEffort(value) {
+    const set = $('model-effort-set').value;
+    const reported = reportedModelEfforts();
     const levels = set === 'provider' ? reported : reasoningEffortSets[set] || [];
     const effortSelect = $('model-reasoning');
     effortSelect.replaceChildren();
@@ -188,10 +189,11 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     }
     effortSelect.value = value;
     $('model-custom-effort').value = set === 'custom' ? value : '';
-    $('model-effort-field').hidden = set === 'inherit' || set === 'custom';
+    $('model-effort-field').hidden = set === 'service' || set === 'custom';
+    $('read-model-efforts').hidden = set !== 'provider';
     $('model-custom-effort-field').hidden = set !== 'custom';
     const hint = $('model-effort-hint');
-    hint.textContent = set === 'provider' && !reported.length ? '获取模型列表后可更新服务声明的档位。'
+    hint.textContent = set === 'provider' && !reported.length ? '当前没有该模型的档位数据，可点击“读取档位”。'
       : Object.hasOwn(reasoningEffortSets, set) ? '可用档位取决于具体模型。' : '';
     hint.hidden = !hint.textContent;
     selects.refresh();
@@ -211,7 +213,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('model-parameter-fields').hidden = profile;
     for (const field of $('model-parameter-fields').querySelectorAll('input, select')) field.disabled = profile;
     $('test-model-draft').hidden = profile;
-    $('model-effort-set').value = thinking ? thinking.effort_set || 'custom' : 'inherit';
+    $('model-effort-set').value = thinking?.effort_set || (thinking && Object.keys(thinking).length ? 'custom' : 'service');
     syncModelEffort(thinking?.reasoning_effort || '');
     modelResult();
     modelDialog.showModal();
@@ -235,16 +237,18 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     candidate.update(editingModel, model, limits, thinking);
     return { model, candidate };
   }
+  function setModelRequest(request) {
+    modelRequest = request;
+    for (const id of ['read-model-efforts', 'test-model-draft', 'save-model-draft']) $(id).disabled = Boolean(request);
+  }
   function closeModelDialog() {
     selects.close();
-    modelProbeRequest?.abort();
-    modelProbeRequest = null;
-    $('test-model-draft').disabled = false;
-    $('save-model-draft').disabled = false;
+    modelRequest?.abort();
+    setModelRequest(null);
     if (modelDialog.open) modelDialog.close();
   }
   async function testModelDraft() {
-    if (modelProbeRequest || !$('model-dialog-form').reportValidity()) return;
+    if (modelRequest || !$('model-dialog-form').reportValidity()) return;
     let input;
     let model;
     try {
@@ -257,9 +261,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       return;
     }
     const request = new AbortController();
-    modelProbeRequest = request;
-    $('test-model-draft').disabled = true;
-    $('save-model-draft').disabled = true;
+    setModelRequest(request);
     modelResult('正在测试模型…');
     try {
       const check = await api('/api/config/test-model', {
@@ -267,15 +269,35 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
         ...payload({ connection: input, connection_id: editingId, model }),
         signal: AbortSignal.any([request.signal, AbortSignal.timeout(50000)]),
       });
-      if (modelProbeRequest === request) modelResult(check.message, check.tool_calling !== false);
+      if (modelRequest === request) modelResult(check.message, check.tool_calling !== false);
     } catch (error) {
-      if (modelProbeRequest === request) modelResult(error.message, false);
+      if (modelRequest === request) modelResult(error.message, false);
     } finally {
-      if (modelProbeRequest === request) {
-        modelProbeRequest = null;
-        $('test-model-draft').disabled = false;
-        $('save-model-draft').disabled = false;
-      }
+      if (modelRequest === request) setModelRequest(null);
+    }
+  }
+  async function readModelEfforts() {
+    if (modelRequest || !modelDialog.open) return;
+    if (!$('model-id-input').value.trim()) {
+      modelResult('请先填写模型 ID。', false);
+      $('model-id-input').focus();
+      return;
+    }
+    const request = new AbortController();
+    setModelRequest(request);
+    modelResult('正在读取服务档位…');
+    try {
+      const catalog = await discoverCatalog(AbortSignal.any([request.signal, AbortSignal.timeout(20000)]));
+      if (modelRequest !== request) return;
+      discoveredCapabilities = catalog.capabilities || {};
+      syncModelEffort(selectedEffort());
+      const levels = reportedModelEfforts();
+      if (levels.length) modelResult(`已读取 ${levels.length} 个档位。`);
+      else modelResult('服务未返回该模型的档位。可使用服务默认或其他档位方案。', false);
+    } catch (error) {
+      if (modelRequest === request) modelResult(error.message, false);
+    } finally {
+      if (modelRequest === request) setModelRequest(null);
     }
   }
   function previewEndpoint() {
@@ -512,12 +534,16 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   modelDialog.addEventListener('close', () => {
     if (!modelDialog.open) closeModelDialog();
   });
-  $('model-effort-set').addEventListener('change', () => syncModelEffort(''));
+  $('model-effort-set').addEventListener('change', () => {
+    modelResult();
+    syncModelEffort('');
+  });
   $('model-id-input').addEventListener('input', () => syncModelEffort(selectedEffort()));
   $('test-model-draft').addEventListener('click', testModelDraft);
+  $('read-model-efforts').addEventListener('click', readModelEfforts);
   $('model-dialog-form').addEventListener('submit', event => {
     event.preventDefault();
-    if (modelProbeRequest || !$('model-dialog-form').reportValidity()) return;
+    if (modelRequest || !$('model-dialog-form').reportValidity()) return;
     try {
       selection = readModelDraft().candidate;
       closeModelDialog();
@@ -530,15 +556,22 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   $('connection-base-url').addEventListener('input', previewEndpoint);
   $('connection-kind').addEventListener('change', syncFields);
   apiKeyToggle.addEventListener('click', toggleApiKey);
-  async function inspectService(loadModels) {
-    if (busy) return;
+  function discoverCatalog(signal) {
     const input = draft();
     if (!input.name) input.name = '未命名连接';
+    return api('/api/config/discover', {
+      method: 'POST',
+      ...payload({ connection: input, connection_id: editingId }),
+      signal,
+    });
+  }
+  async function inspectService(loadModels) {
+    if (busy) return;
     busyState(true);
     if (loadModels) result('正在读取模型列表…');
     else $('check-api-service').textContent = '检查中…';
     try {
-      const discovered = await api('/api/config/discover', { method: 'POST', ...payload({ connection: input, connection_id: editingId }) });
+      const discovered = await discoverCatalog();
       discoveredCapabilities = discovered.capabilities || {};
       if (loadModels) {
         discoveredModels = discovered.models;
