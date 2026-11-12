@@ -1,4 +1,4 @@
-import { normalizeReasoning, reasoningEffortSets } from './reasoning.js';
+import { normalizeReasoning } from './reasoning.js';
 import { ModelSelection } from './model-selection.js';
 import { createSelectMenus } from './dropdown.js';
 import { inferenceEndpoint, normalizeApiBaseUrl } from './api-endpoint.js';
@@ -148,6 +148,10 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     if (!modelsOf().length && !candidates.length) { const row = el('tr'); const cell = el('td', 'empty-models', '添加模型或获取模型列表。'); cell.colSpan = 3; row.append(cell); rows.append(row); }
     $('model-rows').replaceChildren(rows);
   }
+  function savedEffortScheme(settings) {
+    if (settings?.effort_set === 'provider') return 'provider';
+    return settings && Object.keys(settings).length ? 'custom' : 'service';
+  }
   function selectedEffort() {
     return $('model-effort-set').value === 'custom'
       ? $('model-custom-effort').value.trim()
@@ -158,12 +162,12 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     if (set === 'service') return {};
     const effort = selectedEffort();
     const previous = selection.overrides[editingModel];
-    if (previous && (previous.effort_set || 'custom') === set && (previous.reasoning_effort || '') === effort) {
+    if (previous && savedEffortScheme(previous) === set && (previous.reasoning_effort || '') === effort) {
       return previous;
     }
     return normalizeReasoning({
       reasoning_effort: effort,
-      ...(set === 'custom' ? {} : { effort_set: set }),
+      ...(set === 'provider' ? { effort_set: 'provider' } : {}),
     });
   }
   function modelResult(message = '', ok = true) {
@@ -179,22 +183,21 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   function syncModelEffort(value) {
     const set = $('model-effort-set').value;
     const reported = reportedModelEfforts();
-    const levels = set === 'provider' ? reported : reasoningEffortSets[set] || [];
+    const levels = set === 'provider' ? new Set(['', ...reported, value]) : [''];
     const effortSelect = $('model-reasoning');
     effortSelect.replaceChildren();
-    for (const effort of new Set(['', ...levels, value])) {
+    for (const effort of levels) {
       const option = el('option', '', effort || '服务默认');
       option.value = effort;
       effortSelect.append(option);
     }
-    effortSelect.value = value;
+    effortSelect.value = set === 'provider' ? value : '';
     $('model-custom-effort').value = set === 'custom' ? value : '';
     $('model-effort-field').hidden = set === 'service' || set === 'custom';
     $('read-model-efforts').hidden = set !== 'provider';
     $('model-custom-effort-field').hidden = set !== 'custom';
     const hint = $('model-effort-hint');
-    hint.textContent = set === 'provider' && !reported.length ? '当前没有该模型的档位数据，可点击“读取档位”。'
-      : Object.hasOwn(reasoningEffortSets, set) ? '可用档位取决于具体模型。' : '';
+    hint.textContent = set === 'provider' && !reported.length ? '当前没有该模型的档位数据，可点击“读取档位”。' : '';
     hint.hidden = !hint.textContent;
     selects.refresh();
   }
@@ -213,7 +216,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('model-parameter-fields').hidden = profile;
     for (const field of $('model-parameter-fields').querySelectorAll('input, select')) field.disabled = profile;
     $('test-model-draft').hidden = profile;
-    $('model-effort-set').value = thinking?.effort_set || (thinking && Object.keys(thinking).length ? 'custom' : 'service');
+    $('model-effort-set').value = savedEffortScheme(thinking);
     syncModelEffort(thinking?.reasoning_effort || '');
     modelResult();
     modelDialog.showModal();

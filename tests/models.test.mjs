@@ -62,7 +62,7 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   const store = new ModelStore({ stateDir: fixture(), codec });
   const c = save(store, {
     models: ['a', 'b'], default_model: 'a', context_window: 131072, auth_header: 'X-API-Key',
-    reasoning_effort: 'high', model_reasoning: { b: { reasoning_effort: 'max', thinking_format: 'thinking', thinking_mode: 'enabled' } },
+    reasoning_effort: 'high', model_reasoning: { b: { effort_set: 'deepseek', reasoning_effort: 'max', thinking_format: 'thinking', thinking_mode: 'enabled' } },
   });
   store.setDefault(c.id, 'a');
   const v = await viewer(t, store); let probes = 0, saved = 0;
@@ -166,22 +166,20 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.deepEqual(store.get(c.id).model_limits.c, { context_window: 32768, max_output_tokens: 4096 });
   assert.equal(store.get(c.id).model_reasoning.b.reasoning_effort, 'max'); assert.equal(probes, 2, 'Saving does not run inference');
   assert.equal(store.get(c.id).model_reasoning.b.thinking_format, 'thinking');
+  assert.equal(store.get(c.id).model_reasoning.b.effort_set, 'deepseek');
   assert.deepEqual(store.get(c.id).model_reasoning.d, { effort_set: 'provider', reasoning_effort: 'max' });
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 3); assert.match($('connection-test-result').textContent, /TEST b/);
   await action('删除模型 b').dispatch('click');
   await action('编辑模型 d').dispatch('click');
   assert.equal($('model-effort-set').value, 'provider');
-  $('model-effort-set').value = 'deepseek';
+  $('model-effort-set').value = 'custom';
   await $('model-effort-set').dispatch('change');
-  assert.deepEqual($('model-reasoning').children.map(option => option.value), ['', 'none', 'low', 'high', 'max']);
-  $('model-effort-set').value = 'openai';
-  await $('model-effort-set').dispatch('change');
-  assert.ok($('model-reasoning').children.some(option => option.value === 'xhigh'));
-  $('model-reasoning').value = 'xhigh';
+  assert.equal($('model-custom-effort-field').hidden, false);
+  $('model-custom-effort').value = 'xhigh';
   await $('model-dialog-form').dispatch('submit');
   await $('connection-form').dispatch('submit'); await eventually(() => saved === 2 && !$('save-connection').disabled);
   assert.equal(store.get(c.id).default_model, 'a'); assert.equal(store.get(c.id).model_reasoning.b, undefined);
-  assert.deepEqual(store.get(c.id).model_reasoning.d, { effort_set: 'openai', reasoning_effort: 'xhigh' });
+  assert.deepEqual(store.get(c.id).model_reasoning.d, { reasoning_effort: 'xhigh' });
   await $('new-connection').dispatch('click');
   assert.equal($('connection-kind-field').hidden, false); assert.equal($('connection-kind').disabled, false);
   const profile = store.publicConfig().connections.find(connection => connection.kind === 'profile');

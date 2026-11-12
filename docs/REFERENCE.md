@@ -14,7 +14,7 @@ Open `http://127.0.0.1:43187`. The page groups conversations by working director
 
 ## Model settings
 
-Choose an effort scheme in the model dialog, then select a level or enter a custom value. The saved `effort_set` field restores the scheme in the editor. The service scheme can read levels from the upstream model list. Saving the service default creates an empty `model_reasoning[model_id]` override so the upstream service decides the effort. Older records without overrides can still carry connection defaults.
+The model dialog offers the service default, service-declared levels, and a custom value. The service-declared scheme reads levels from the upstream model list and persists `effort_set: "provider"`. Earlier built-in schemes appear as custom values in the editor. Saving the service default creates an empty `model_reasoning[model_id]` override so the upstream service decides the effort. Older records without overrides can still carry connection defaults.
 
 The gateway sends the selected value as `reasoning.effort` (Responses) or `reasoning_effort` (Chat). The editor can use levels declared by model discovery. Existing configurations may contain `thinking` or `reasoning` extension fields. Editing the scheme or level replaces those fields with a standard effort setting.
 
