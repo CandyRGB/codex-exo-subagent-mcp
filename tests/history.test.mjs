@@ -63,11 +63,11 @@ test('only registered MCP sessions are visible; matching legacy providers do not
   const f = fixture(); const expected = rollout(f); register(f, expected); const legacy = rollout(f); const official = rollout(f, { provider: 'openai' }); rollout(f, { source: 'vscode' });
   const repo = new SessionRepository(f); const sessions = await repo.list();
   assert.equal(sessions.length, 1); assert.equal(sessions[0].id, expected.id); assert.equal(sessions[0].project, 'example');
-  await assert.rejects(repo.get(official.id), /not found/);
-  await assert.rejects(repo.get(legacy.id), /not found/);
-  await assert.rejects(repo.get(legacy.id, { full: true }), /not found/);
-  await assert.rejects(repo.toolOutput(legacy.id, 'entry-1'), /not found/);
-  await assert.rejects(repo.get('../outside'), /Invalid session ID/);
+  await assert.rejects(repo.get(official.id), /未找到/);
+  await assert.rejects(repo.get(legacy.id), /未找到/);
+  await assert.rejects(repo.get(legacy.id, { full: true }), /未找到/);
+  await assert.rejects(repo.toolOutput(legacy.id, 'entry-1'), /未找到/);
+  await assert.rejects(repo.get('../outside'), /会话编号无效/);
 });
 
 test('preexisting legacy summaries and display metadata cannot survive outside the MCP registry', async () => {
@@ -77,7 +77,7 @@ test('preexisting legacy summaries and display metadata cannot survive outside t
   writeFileSync(join(viewerDir, 'session-metadata.json'), JSON.stringify({ [legacy.id]: { title: '旧版名称', pinned: true } }));
   const repo = new SessionRepository(f);
   assert.deepEqual(await repo.list(), []);
-  await assert.rejects(repo.get(legacy.id), /not found/);
+  await assert.rejects(repo.get(legacy.id), /未找到/);
   assert.deepEqual(JSON.parse(readFileSync(join(viewerDir, 'index-cache.json'), 'utf8')), []);
   assert.deepEqual(JSON.parse(readFileSync(join(viewerDir, 'session-metadata.json'), 'utf8')), {});
 });

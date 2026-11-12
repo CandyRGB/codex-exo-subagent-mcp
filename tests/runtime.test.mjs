@@ -98,14 +98,14 @@ test('completed sessions survive manager restart; resume keeps routing and seria
   const nextManager = manager(t, { stateDir: firstManager.stateDir });
   assert.equal(nextManager.view(first.job_id, true).result.text, 'FIRST');
   const resumed = await nextManager.call({ action: 'resume', job_id: first.job_id, prompt: prompt({ delay: 300, reportArgs: true }) });
-  await assert.rejects(nextManager.call({ action: 'resume', job_id: first.job_id, prompt: '{}' }), /already has an active task/);
+  await assert.rejects(nextManager.call({ action: 'resume', job_id: first.job_id, prompt: '{}' }), /已有任务在运行/);
   const done = await nextManager.call({ action: 'wait', job_id: resumed.job_id, wait_sec: 5 });
   assert.equal(done.session_id, first.session_id);
   assert.equal(done.parent_job_id, first.job_id);
   const actual = JSON.parse(done.result.text);
   assert.equal(actual.argv[actual.argv.indexOf('resume') + 1], first.session_id);
   assert.equal(actual.argv[actual.argv.indexOf('--sandbox') + 1], 'read-only');
-  await assert.rejects(nextManager.call({ action: 'resume', job_id: first.job_id, prompt: '{}', profile: 'other' }), /original profile/);
+  await assert.rejects(nextManager.call({ action: 'resume', job_id: first.job_id, prompt: '{}', profile: 'other' }), /原来的 profile/);
 });
 
 test('cancel terminates the process tree and is idempotent', async t => {
@@ -133,12 +133,12 @@ test('timeout stops the child; CLI failures propagate even with exit code zero',
 
 test('invalid cwd, IDs, limits, recursion, missing binaries fail explicitly', async t => {
   const m = manager(t);
-  await assert.rejects(m.call({ prompt: '{}', cwd: 'relative' }), /existing absolute directory/);
+  await assert.rejects(m.call({ prompt: '{}', cwd: 'relative' }), /已存在的绝对目录/);
   await assert.rejects(m.call({ action: 'status', job_id: '../outside' }), /UUID/);
   await assert.rejects(m.call({ prompt: '{}', timeout_sec: -1 }), /timeout_sec/);
   await assert.rejects(m.call({ action: 'wait', job_id: randomUUID(), wait_sec: 31 }), /wait_sec/);
   const nested = manager(t, { env: { ...process.env, CODEX_SUBAGENT_DEPTH: '2' } });
-  await assert.rejects(nested.call({ prompt: '{}' }), /nesting limit/);
+  await assert.rejects(nested.call({ prompt: '{}' }), /嵌套层级/);
   const missing = manager(t, { codexBin: join(directory(), 'missing-executable') });
   const failure = await missing.call({ prompt: '{}' });
   assert.equal(failure.status, 'failed');
@@ -149,7 +149,7 @@ test('concurrency cap rejects excess tasks; shutdown records interruption', asyn
   const m = manager(t);
   const first = await m.call({ action: 'start', prompt: prompt({ delay: 10000 }) });
   const second = await m.call({ action: 'start', prompt: prompt({ delay: 10000 }) });
-  await assert.rejects(m.call({ action: 'start', prompt: '{}' }), /Concurrency limit/);
+  await assert.rejects(m.call({ action: 'start', prompt: '{}' }), /并发任务已达上限/);
   await m.shutdown();
   assert.equal(m.view(first.job_id).status, 'interrupted');
   assert.equal(m.view(second.job_id).status, 'interrupted');
@@ -167,7 +167,7 @@ test('abandoned job is interrupted, and a live foreign owner cannot be killed', 
   assert.equal(m.view(result.job_id).status, 'interrupted');
   stored.owner_pid = process.pid;
   writeFileSync(path, JSON.stringify(stored));
-  await assert.rejects(m.stop(result.job_id), /originating chat/);
+  await assert.rejects(m.stop(result.job_id), /发起它的会话/);
 });
 
 test('MCP stdio handshake, compact single-tool schema, async execution, and disconnect cleanup', async t => {

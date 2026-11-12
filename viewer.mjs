@@ -20,7 +20,7 @@ const packageVersion = (() => {
 })();
 
 export async function createViewer({ stateDir = join(root, 'state'), codexHome = process.env.CODEX_HOME || join(homedir(), '.codex'), port = DEFAULT_PORT, host = '127.0.0.1', modelStore = null } = {}) {
-  if (host !== '127.0.0.1') throw new Error('The session viewer only binds to loopback');
+  if (host !== '127.0.0.1') throw new Error('本机工作区只能监听 127.0.0.1。');
   const repository = new SessionRepository({ stateDir, codexHome });
   let boundPort = port;
   const store = modelStore || new ModelStore({ stateDir });
@@ -37,9 +37,9 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
     };
     try {
       const allowedHosts = new Set([`127.0.0.1:${boundPort}`, `localhost:${boundPort}`]);
-      if (!allowedHosts.has(request.headers.host)) { send(403, { error: 'Invalid local host' }); return; }
+      if (!allowedHosts.has(request.headers.host)) { send(403, { error: 'Host 请求头无效。' }); return; }
       const origin = request.headers.origin;
-      if (origin && ![`http://127.0.0.1:${boundPort}`, `http://localhost:${boundPort}`].includes(origin)) { send(403, { error: 'Cross-origin requests are not allowed' }); return; }
+      if (origin && ![`http://127.0.0.1:${boundPort}`, `http://localhost:${boundPort}`].includes(origin)) { send(403, { error: '不允许跨站请求。' }); return; }
       const url = new URL(request.url, `http://127.0.0.1:${boundPort}`);
       if (request.method === 'GET' && url.pathname === '/health') {
         send(200, { service: 'codex-subagent-viewer', version: packageVersion, state_id: stateIdentity(stateDir), codex_home: repository.codexHome, pid: process.pid }); return;
@@ -64,7 +64,7 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
         }
         if (name) {
           if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')) {
-            send(415, { error: 'Expected JSON' });
+            send(415, { error: '请求内容必须是 JSON。' });
             return;
           }
           send(200, saveProfile(repository.codexHome, name, await readJSON(request, profileRequestLimit)));
@@ -101,7 +101,7 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
             return;
           }
           if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')) {
-            send(415, { error: 'Expected JSON' });
+            send(415, { error: '请求内容必须是 JSON。' });
             return;
           }
           await readJSON(request, 4096);
@@ -140,9 +140,9 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
         return;
       }
       if (match && request.method === 'PATCH' && !match[2]) {
-        if (!request.headers['content-type']?.startsWith('application/json')) { send(415, { error: 'Expected JSON' }); return; }
+        if (!request.headers['content-type']?.startsWith('application/json')) { send(415, { error: '请求内容必须是 JSON。' }); return; }
         let body = '';
-        for await (const chunk of request) { body += chunk; if (body.length > 4096) { send(413, { error: 'Request too large' }); return; } }
+        for await (const chunk of request) { body += chunk; if (body.length > 4096) { send(413, { error: '请求内容过大。' }); return; } }
         const result = await repository.update(decodeURIComponent(match[1]), JSON.parse(body));
         send(200, result); return;
       }
@@ -151,8 +151,8 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
         const [file, type] = staticFiles[url.pathname];
         send(200, readFileSync(join(root, 'web', file)), type); return;
       }
-      send(404, { error: 'Not found' });
-    } catch (error) { send(error.status || (error instanceof SyntaxError ? 400 : 500), { error: request.url.startsWith('/api/config') ? safeError(error.message) : error.status || error instanceof SyntaxError ? error.message : 'Unable to read the local session record' }); }
+      send(404, { error: '未找到请求的资源。' });
+    } catch (error) { send(error.status || (error instanceof SyntaxError ? 400 : 500), { error: request.url.startsWith('/api/config') ? safeError(error.message) : error.status || error instanceof SyntaxError ? error.message : '无法读取本地会话记录。' }); }
   });
   await new Promise((done, reject) => { server.once('error', reject); server.listen(port, host, done); });
   boundPort = server.address().port;
@@ -164,7 +164,7 @@ if (process.argv[1] && pathToFileURL(realpathSync(resolve(process.argv[1]))).hre
   const arg = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
   const stateDir = resolve(arg('--state-dir') || process.env.CODEX_SUBAGENT_STATE_DIR || join(root, 'state'));
   const port = Number(arg('--port') || process.env.CODEX_SUBAGENT_VIEWER_PORT || DEFAULT_PORT);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid viewer port');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('工作区端口无效。');
   const viewer = await createViewer({ stateDir, port, codexHome: arg('--codex-home') || process.env.CODEX_HOME || join(homedir(), '.codex') });
   mkdirSync(join(stateDir, 'viewer'), { recursive: true });
   writeFileSync(join(stateDir, 'viewer', 'service.json'), JSON.stringify({ pid: process.pid, url: viewer.url, state_id: stateIdentity(stateDir), started_at: new Date().toISOString() }));

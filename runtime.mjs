@@ -19,7 +19,7 @@ const now = () => new Date().toISOString();
 function integer(value, fallback, min, max, name) {
   if (value === undefined) return fallback;
   if (!Number.isInteger(value) || value < min || value > max) {
-    throw new Error(`${name} must be an integer between ${min} and ${max}`);
+    throw new Error(`${name} 必须是 ${min}–${max} 之间的整数。`);
   }
   return value;
 }
@@ -90,7 +90,7 @@ async function killTree(child) {
       killer.on('error', reject);
       killer.on('exit', code => {
         if (code === 0 || child.exitCode !== null || child.signalCode !== null) resolveKill();
-        else reject(new Error(`taskkill exited with code ${code}`));
+        else reject(new Error(`无法终止子进程（taskkill 退出码 ${code}）。`));
       });
     });
   } else {
@@ -120,7 +120,7 @@ export class JobManager {
   }
 
   jobDir(id) {
-    if (typeof id !== 'string' || !UUID.test(id)) throw new Error('job_id must be a UUID returned by this tool');
+    if (typeof id !== 'string' || !UUID.test(id)) throw new Error('job_id 必须是本工具返回的 UUID。');
     return join(this.stateDir, 'jobs', id);
   }
 
@@ -137,10 +137,10 @@ export class JobManager {
     let job;
     try { job = JSON.parse(readFileSync(join(this.jobDir(id), 'job.json'), 'utf8')); }
     catch (error) {
-      if (error.code === 'ENOENT') throw new Error(`Unknown job: ${id}`);
+      if (error.code === 'ENOENT') throw new Error(`未知任务：${id}`);
       throw error;
     }
-    if (job.job_id !== id) throw new Error('Invalid stored job');
+    if (job.job_id !== id) throw new Error('任务记录无效。');
     if (ACTIVE.has(job.status) && !alive(job.owner_pid)) {
       job.status = 'interrupted';
       job.finished_at = now();
@@ -152,7 +152,7 @@ export class JobManager {
   }
 
   lockSession(sessionId, jobId) {
-    if (!UUID.test(sessionId)) throw new Error('Invalid session ID from Codex');
+    if (!UUID.test(sessionId)) throw new Error('Codex 返回的会话编号无效。');
     const path = join(this.stateDir, 'sessions', `${sessionId}.lock`);
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -161,11 +161,11 @@ export class JobManager {
       } catch (error) {
         if (error.code !== 'EEXIST') throw error;
         const holder = JSON.parse(readFileSync(path, 'utf8'));
-        if (alive(holder.owner_pid)) throw new Error(`Session already has an active task: ${holder.job_id}`);
+        if (alive(holder.owner_pid)) throw new Error(`该会话已有任务在运行：${holder.job_id}`);
         unlinkSync(path);
       }
     }
-    throw new Error('Could not acquire the session lock; try again');
+    throw new Error('无法获取会话锁，请重试。');
   }
 
   unlockSession(job) {
@@ -178,38 +178,38 @@ export class JobManager {
   }
 
   start(args = {}, parent = null) {
-    if (this.closing) throw new Error('MCP server is shutting down');
+    if (this.closing) throw new Error('MCP 服务正在关闭。');
     if (!Number.isFinite(this.depth) || !Number.isFinite(this.maxDepth) || this.depth >= this.maxDepth) {
-      throw new Error('Subagent nesting limit reached; perform this task in the caller');
+      throw new Error('子代理嵌套层级已达上限，请在调用方完成此任务。');
     }
     if ([...this.jobs.values()].filter(record => ACTIVE.has(record.job.status)).length >= this.maxConcurrent) {
-      throw new Error(`Concurrency limit (${this.maxConcurrent}) reached; wait for or cancel an existing task`);
+      throw new Error(`并发任务已达上限（${this.maxConcurrent}），请等待或取消现有任务。`);
     }
     if (typeof args.prompt !== 'string' || !args.prompt.trim() || args.prompt.length > 200_000) {
-      throw new Error('prompt must be a nonempty string of at most 200000 characters');
+      throw new Error('prompt 必须是非空字符串，且不超过 200000 个字符。');
     }
     const cwd = parent?.cwd || args.cwd || process.cwd();
     if (typeof cwd !== 'string' || !isAbsolute(cwd) || !existsSync(cwd) || !statSync(cwd).isDirectory()) {
-      throw new Error('cwd must be an existing absolute directory; it will not silently fall back');
+      throw new Error('cwd 必须是已存在的绝对目录，不会自动回退。');
     }
     const selected = this.modelStore.select(args, parent);
     const model = selected.model;
     const profile = selected.profile;
     const connection = selected.connection;
-    if (model !== null && (typeof model !== 'string' || !model.trim() || model.length > 200 || /[\r\n]/.test(model))) throw new Error('Invalid model');
-    if (profile !== null && (typeof profile !== 'string' || !/^[A-Za-z0-9_-]+$/.test(profile))) throw new Error('Invalid profile name');
+    if (model !== null && (typeof model !== 'string' || !model.trim() || model.length > 200 || /[\r\n]/.test(model))) throw new Error('模型 ID 无效。');
+    if (profile !== null && (typeof profile !== 'string' || !/^[A-Za-z0-9_-]+$/.test(profile))) throw new Error('profile 名称无效。');
     const sandbox = parent?.sandbox || args.sandbox || 'workspace-write';
-    if (!['read-only', 'workspace-write', 'danger-full-access'].includes(sandbox)) throw new Error('Invalid sandbox');
+    if (!['read-only', 'workspace-write', 'danger-full-access'].includes(sandbox)) throw new Error('沙箱模式无效。');
     const timeoutSec = integer(args.timeout_sec, 900, 1, 86400, 'timeout_sec');
     const outputChars = integer(args.max_output_chars, this.defaultOutputChars, 256, 16000, 'max_output_chars');
-    if (parent && ACTIVE.has(parent.status)) throw new Error('The previous task is still running; wait for it or cancel it first');
-    if (parent && !parent.session_id) throw new Error('This job has no recorded Codex session to resume');
+    if (parent && ACTIVE.has(parent.status)) throw new Error('上一个任务仍在运行，请等待或先取消。');
+    if (parent && !parent.session_id) throw new Error('此任务没有可续聊的 Codex 会话。');
     for (const key of ['cwd', 'model', 'profile', 'sandbox', 'connection_id']) {
-      if (parent && args[key] !== undefined && args[key] !== parent[key]) throw new Error(`resume keeps the original ${key}; start a new job to change it`);
+      if (parent && args[key] !== undefined && args[key] !== parent[key]) throw new Error(`续聊会保留原来的 ${key}，如需修改请新建任务。`);
     }
     const managed = connection && connection.kind !== 'profile';
     const gatewayPort = managed ? Number(this.env.CODEX_SUBAGENT_VIEWER_PORT || 43187) : null;
-    if (managed && (!Number.isInteger(gatewayPort) || gatewayPort < 1 || gatewayPort > 65535)) throw new Error('Invalid local gateway port');
+    if (managed && (!Number.isInteger(gatewayPort) || gatewayPort < 1 || gatewayPort > 65535)) throw new Error('本机网关端口无效。');
     const gatewayToken = managed ? this.modelStore.gatewayToken() : null;
     const job = {
       job_id: randomUUID(), status: 'running', session_id: parent?.session_id || null,
@@ -360,7 +360,7 @@ export class JobManager {
     const record = this.jobs.get(id);
     const job = this.load(id);
     if (!ACTIVE.has(job.status)) return this.view(id);
-    if (!record) throw new Error('This active job belongs to another live MCP connection; cancel it from the originating chat');
+    if (!record) throw new Error('该任务属于另一个仍在运行的 MCP 连接，请在发起它的会话中取消。');
     if (!record.stopping) {
       record.stopping = reason;
       job.status = 'cancelling';
@@ -420,7 +420,7 @@ export class JobManager {
       const limit = integer(args.max_output_chars, job.max_output_chars, 256, 16000, 'max_output_chars');
       let text = '';
       try { text = readFileSync(join(this.jobDir(id), 'result.txt'), 'utf8'); } catch {}
-      if (offset > text.length) throw new Error('offset is past the end of the result');
+      if (offset > text.length) throw new Error('offset 超出结果长度。');
       let end = Math.min(offset + limit, text.length);
       if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
       summary.result = {
@@ -468,7 +468,7 @@ export class JobManager {
       case 'result': return this.view(args.job_id, true, args);
       case 'list': return this.list(args.limit);
       case 'models': return this.modelStore.describe(args.connection_id);
-      default: throw new Error(`Unknown action: ${action}`);
+      default: throw new Error(`未知操作：${action}`);
     }
   }
 

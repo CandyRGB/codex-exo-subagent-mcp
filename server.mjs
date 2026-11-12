@@ -82,7 +82,7 @@ export function startServer(options = {}) {
           let result;
           if (args.action === 'viewer') {
             await viewerReady;
-            if (!viewerUrl) throw new Error(viewerError || 'The local history viewer is disabled for this connection');
+            if (!viewerUrl) throw new Error(viewerError || '当前连接未启用本机工作区，无法获取地址。');
             result = { viewer_url: viewerUrl };
           } else if (!args.action || args.action === 'run') {
             const jobId = manager.start(args);

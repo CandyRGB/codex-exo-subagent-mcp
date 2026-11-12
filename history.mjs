@@ -301,10 +301,10 @@ export class SessionRepository {
   }
 
   async get(id, { before, limit = 100, full = false } = {}) {
-    if (!ID.test(id)) throw Object.assign(new Error('Invalid session ID'), { status: 400 });
+    if (!ID.test(id)) throw Object.assign(new Error('会话编号无效。'), { status: 400 });
     await this.refresh();
     let item = this.index.get(id) || [...this.index.values()].find(candidate => candidate.jobs?.some(job => job.job_id === id));
-    if (!item) throw Object.assign(new Error('Session not found'), { status: 404 });
+    if (!item) throw Object.assign(new Error('未找到该会话。'), { status: 404 });
     let transcript;
     if (item.path) transcript = full ? await parseRollout(item.path, { full: true }) : await this.parsed(item.path);
     else {
@@ -335,7 +335,7 @@ export class SessionRepository {
     const all = transcript.entries;
     const end = before === undefined ? all.length : Number(before);
     if (!Number.isInteger(end) || end < 0 || end > all.length || !Number.isInteger(limit) || limit < 1 || limit > 200) {
-      throw Object.assign(new Error('Invalid pagination'), { status: 400 });
+      throw Object.assign(new Error('分页参数无效。'), { status: 400 });
     }
     const start = full ? 0 : Math.max(0, end - limit);
     const selected = all.slice(start, full ? all.length : end);
@@ -348,12 +348,12 @@ export class SessionRepository {
   }
 
   async toolOutput(id, entryId) {
-    if (!ID.test(id) || !/^entry-\d+$/.test(entryId)) throw Object.assign(new Error('Invalid entry'), { status: 400 });
+    if (!ID.test(id) || !/^entry-\d+$/.test(entryId)) throw Object.assign(new Error('条目编号无效。'), { status: 400 });
     await this.refresh();
     const item = this.index.get(id);
-    if (!item?.path) throw Object.assign(new Error('Native session record not found'), { status: 404 });
+    if (!item?.path) throw Object.assign(new Error('未找到该会话的原生日志。'), { status: 404 });
     const entry = (await this.parsed(item.path)).entries.find(entry => entry.id === entryId && entry.kind === 'tool');
-    if (!entry) throw Object.assign(new Error('Tool entry not found'), { status: 404 });
+    if (!entry) throw Object.assign(new Error('未找到该工具记录。'), { status: 404 });
     for await (const record of records(item.path)) {
       const p = record.payload || {};
       if (record.type === 'response_item' && ['function_call_output', 'custom_tool_call_output'].includes(p.type) && p.call_id === entry.call_id) return plain(p.output);
@@ -363,8 +363,8 @@ export class SessionRepository {
 
   async update(id, patch) {
     await this.get(id, { limit: 1 });
-    if (patch.title !== undefined && (typeof patch.title !== 'string' || !patch.title.trim() || patch.title.length > 120)) throw Object.assign(new Error('Title must contain 1–120 characters'), { status: 400 });
-    if (patch.pinned !== undefined && typeof patch.pinned !== 'boolean') throw Object.assign(new Error('Invalid pin value'), { status: 400 });
+    if (patch.title !== undefined && (typeof patch.title !== 'string' || !patch.title.trim() || patch.title.length > 120)) throw Object.assign(new Error('会话名称需为 1–120 个字符。'), { status: 400 });
+    if (patch.pinned !== undefined && typeof patch.pinned !== 'boolean') throw Object.assign(new Error('置顶状态无效。'), { status: 400 });
     const metadata = this.overrides();
     metadata[id] = { ...metadata[id] };
     if (patch.title !== undefined) metadata[id].title = patch.title.trim();
