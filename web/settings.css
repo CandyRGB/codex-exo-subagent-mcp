@@ -161,6 +161,11 @@
   overflow: auto;
   tab-size: 4;
 }
+.connections-empty {
+  margin: 20px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
 @media (max-width: 760px) {
   .model-table {
     --model-action-cell-padding: 8px;

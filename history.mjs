@@ -108,7 +108,7 @@ async function inspectRollout(path, meta) {
       if (['turn_aborted', 'task_aborted'].includes(p.type)) status = 'cancelled';
     }
   }
-  return { id: meta.id, title: (firstUser || '未命名会话').split('\n').find(line => line.trim())?.slice(0, 90), cwd: meta.cwd || '', model: model || meta.model || 'deepseek-v4.1-flash', provider: meta.model_provider, created_at: meta.timestamp, updated_at: updatedAt, status, user_turns: turns, tool_calls: tools };
+  return { id: meta.id, title: (firstUser || '未命名会话').split('\n').find(line => line.trim())?.slice(0, 90), cwd: meta.cwd || '', model: model || meta.model || null, provider: meta.model_provider, created_at: meta.timestamp, updated_at: updatedAt, status, user_turns: turns, tool_calls: tools };
 }
 
 async function peek(path) {
@@ -237,7 +237,7 @@ export class SessionRepository {
       const native = next.get(id);
       next.set(id, {
         id, title: native?.title || first.title || '未命名会话', cwd: last.cwd,
-        model: last.model, provider: last.connection_name || last.profile,
+        model: last.model || native?.model || null, provider: last.connection_name || last.profile || native?.provider || null,
         connection_id: last.connection_id || null, connection_name: last.connection_name || null,
         created_at: native?.created_at || first.started_at, updated_at: last.finished_at || native?.updated_at || last.started_at,
         status: active.has(last.status) && !this.ownerAlive(last.owner_pid) ? 'interrupted' : last.status,

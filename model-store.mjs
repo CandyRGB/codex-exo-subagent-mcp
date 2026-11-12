@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { normalizeReasoning } from './reasoning.mjs';
 import { normalizeApiBaseUrl } from './api-endpoint.mjs';
@@ -32,17 +32,15 @@ export class ModelStore {
     this.root = join(this.stateDir, 'config'); mkdirSync(this.root, { recursive: true });
     this.path = join(this.root, 'models.json'); this.secretsPath = join(this.root, 'credentials.json');
     this.tokenPath = join(this.root, 'gateway.token'); this.secretCache = new Map();
-    if (!existsSync(this.path)) {
-      const model = env.CODEX_SUBAGENT_MODEL || 'deepseek-v4.1-flash';
-      writeJSON(this.path, { version: 1, default_connection_id: 'current-profile', connections: [{
-        id: 'current-profile', name: '当前 WorkBuddy 路由', kind: 'profile', protocol: 'profile',
-        profile: env.CODEX_SUBAGENT_PROFILE || 'workbuddy', models: [model], default_model: model,
-        auth_mode: 'none', enabled: true,
-      }] });
-    }
   }
   read() {
-    const config = JSON.parse(readFileSync(this.path, 'utf8').replace(/^\uFEFF/, ''));
+    let raw;
+    try { raw = readFileSync(this.path, 'utf8'); }
+    catch (error) {
+      if (error.code === 'ENOENT') return { version: 1, default_connection_id: null, connections: [] };
+      throw error;
+    }
+    const config = JSON.parse(raw.replace(/^\uFEFF/, ''));
     if (config.version !== 1 || !Array.isArray(config.connections)) throw new Error('模型配置格式无效，请从备份恢复。');
     return config;
   }
@@ -119,7 +117,9 @@ export class ModelStore {
     const config = this.read(); const previous = id ? this.get(id) : null;
     if (!previous && config.connections.length >= 50) fail('最多保存 50 个模型连接。');
     const connection = this.normalize(input, previous);
-    if (!connection.enabled && config.default_connection_id === connection.id) fail('请先切换默认连接，再停用当前默认连接。');
+    if (!connection.enabled && config.default_connection_id === connection.id) {
+      clearDefault(config, connection.id, '停用');
+    }
     const credentials = this.credentials();
     if (connection.auth_mode === 'stored') {
       if (input.api_key) {
@@ -131,6 +131,7 @@ export class ModelStore {
     writeJSON(this.secretsPath, credentials);
     if (previous) config.connections[config.connections.findIndex(c => c.id === id)] = connection;
     else config.connections.push(connection);
+    if (connection.enabled && !config.default_connection_id) config.default_connection_id = connection.id;
     writeJSON(this.path, config);
     return this.publicConfig();
   }
@@ -146,14 +147,15 @@ export class ModelStore {
     const config = this.read();
     const connection = config.connections.find(item => item.id === id);
     if (!connection) throw Object.assign(new Error('模型连接不存在，请重新选择。'), { status: 404 });
-    if (!enabled && config.default_connection_id === id) fail('请先切换默认连接，再停用当前默认连接。');
+    if (!enabled && config.default_connection_id === id) clearDefault(config, id, '停用');
     connection.enabled = enabled;
+    if (enabled && !config.default_connection_id) config.default_connection_id = id;
     writeJSON(this.path, config);
     return this.publicConfig();
   }
   remove(id) {
     const config = this.read(); this.get(id);
-    if (config.default_connection_id === id) fail('请先选择另一个默认连接，再移除此连接。');
+    if (config.default_connection_id === id) clearDefault(config, id, '移除');
     config.connections = config.connections.filter(c => c.id !== id);
     const credentials = this.credentials(); delete credentials[id]; writeJSON(this.secretsPath, credentials);
     this.secretCache.delete(id); writeJSON(this.path, config); return this.publicConfig();
@@ -183,9 +185,14 @@ export class ModelStore {
   select(args, parent = null) {
     if (args.connection_id && args.profile) fail('connection_id 和 profile 不能同时指定。');
     if (parent && !parent.connection_id) return { connection: null, model: parent.model, profile: parent.profile };
-    if (!parent && args.profile && !args.connection_id) return { connection: null, model: args.model || this.env.CODEX_SUBAGENT_MODEL || 'deepseek-v4.1-flash', profile: args.profile };
+    if (!parent && args.profile) return { connection: null, model: args.model || this.env.CODEX_SUBAGENT_MODEL || null, profile: args.profile };
     const config = this.read();
     const id = parent?.connection_id || args.connection_id || config.default_connection_id;
+    if (!id) {
+      const profile = this.env.CODEX_SUBAGENT_PROFILE;
+      if (profile) return { connection: null, model: args.model || this.env.CODEX_SUBAGENT_MODEL || null, profile };
+      fail('尚未配置默认模型连接。请在「模型与连接」中添加并启用连接。');
+    }
     const connection = this.get(id);
     if (!connection.enabled) throw new Error('所选模型连接已停用。');
     if (parent && (args.connection_id && args.connection_id !== parent.connection_id || parent.connection_fingerprint !== this.fingerprint(connection))) throw new Error('续聊连接的地址或认证方式已改变，请恢复原配置或新建任务。');
@@ -202,9 +209,14 @@ export class ModelStore {
   }
   describe(id = null) {
     const config = this.read(); const selected = config.connections.find(c => c.id === config.default_connection_id);
-    return { default_connection_id: config.default_connection_id, default_model: selected?.default_model,
+    return { default_connection_id: config.default_connection_id, default_model: selected?.default_model ?? null,
       connections: config.connections.filter(c => c.enabled && (!id || c.id === id)).map(c => ({ id: c.id, name: c.name, kind: c.kind, protocol: c.protocol, default_model: c.default_model, models: c.models.slice(0, id ? 100 : 10), more_models: Math.max(0, c.models.length - (id ? 100 : 10)) })) };
   }
+}
+
+function clearDefault(config, id, action) {
+  if (config.connections.some(c => c.id !== id && c.enabled)) fail(`请先切换默认连接，再${action}此连接。`);
+  config.default_connection_id = null;
 }
 
 export function safeError(message, secret = '') {

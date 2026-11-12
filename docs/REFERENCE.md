@@ -1,6 +1,6 @@
 # codex-exo-subagent v4 — configurable model workspace
 
-Run independent Codex CLI agents through configured local models, API services, model routers or an existing Codex profile. The current `workbuddy` profile and `deepseek-v4.1-flash` model are retained as the initial connection. The default official Codex model and authentication configuration are not changed.
+Run independent Codex CLI agents through configured local models, API services, model routers or an existing Codex profile. The connection list starts empty. The first enabled connection becomes the default.
 
 Requires Node.js 24+ and a Codex CLI supporting `exec --json` and `exec resume`. No npm packages are required. Keep all adjacent `.mjs` modules and the `web/` assets together.
 
@@ -85,8 +85,8 @@ For `run` or `start`, omit `connection_id` and `model` to use website defaults, 
 
 | Environment variable | Default |
 | --- | --- |
-| `CODEX_SUBAGENT_PROFILE` | `workbuddy` |
-| `CODEX_SUBAGENT_MODEL` | `deepseek-v4.1-flash` |
+| `CODEX_SUBAGENT_PROFILE` | Unset. Optional profile for calls without a saved default connection. |
+| `CODEX_SUBAGENT_MODEL` | Unset. Optional model override for direct profile calls. |
 | `CODEX_SUBAGENT_MAX_CONCURRENT` | `2` (per MCP process, maximum 16) |
 | `CODEX_SUBAGENT_MAX_OUTPUT_CHARS` | `4000` |
 | `CODEX_SUBAGENT_STATE_DIR` | `state` next to the entry point |

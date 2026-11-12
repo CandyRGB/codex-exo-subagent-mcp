@@ -45,9 +45,9 @@ cd codex-exo-subagent-mcp
 node open-viewer.mjs --settings
 ```
 
-在 **模型与连接** 中点击 **添加连接**，填写 API 根地址和认证方式，添加一个或多个模型 ID，指定默认模型，然后保存并按需测试。最后把该连接设为默认，供新任务使用。
+在 **模型与连接** 中点击 **添加连接**，填写 API 根地址和认证方式，添加一个或多个模型 ID，指定默认模型，然后保存并按需测试。
 
-首次启动会生成一条 `workbuddy` / `deepseek-v4.1-flash` 的 profile 连接，避免页面为空。若本机没有这个 profile，直接新增自己的连接并设为默认即可，忽略这条初始记录。
+首次启动时连接列表为空。你可以添加 API 连接，或选择本机已有的 Codex profile。第一个启用的连接会自动设为默认。
 
 在仓库目录中注册 MCP：
 
@@ -159,7 +159,7 @@ npm test
 # 实际文件写入、shell 命令、会话续接与 profile 导出
 npm run test:cli
 
-# 可选：对已配置的模型执行两轮调用，可能消耗额度
+# 可选：先用 CODEX_SUBAGENT_PROFILE 指定本机 profile，再执行两轮真实调用
 npm run test:live
 ```
 
@@ -173,8 +173,8 @@ npm run test:live
 | `CODEX_SUBAGENT_MAX_CONCURRENT` | 每个 MCP 进程 `2`，上限 16 |
 | `CODEX_SUBAGENT_MAX_OUTPUT_CHARS` | 每页 `4000` 个 UTF-16 字符，可设 256–16000 |
 | `CODEX_SUBAGENT_CODEX_BIN` | Windows 上取最新安装的桌面端 Codex，否则使用 `PATH` 中的 `codex` |
-| `CODEX_SUBAGENT_PROFILE` | `workbuddy` |
-| `CODEX_SUBAGENT_MODEL` | `deepseek-v4.1-flash` |
+| `CODEX_SUBAGENT_PROFILE` | 默认未设置。没有已保存的默认连接时，可用它指定 profile。 |
+| `CODEX_SUBAGENT_MODEL` | 默认未设置。直接调用 profile 时，可用它指定模型。 |
 | `CODEX_SUBAGENT_MAX_DEPTH` | `2` |
 | `CODEX_HOME` | `~/.codex` |
 

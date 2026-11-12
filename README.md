@@ -45,9 +45,9 @@ cd codex-exo-subagent-mcp
 node open-viewer.mjs --settings
 ```
 
-In **Models & connections** (模型与连接), choose **Add connection**, enter an API base URL and authentication, add one or more model IDs, pick the default model, then save and test it. Mark the connection as default for new tasks.
+In **Models & connections** (模型与连接), choose **Add connection**, enter an API base URL and authentication, add one or more model IDs, pick the default model, then save and test it.
 
-The first launch seeds a `workbuddy` / `deepseek-v4.1-flash` profile connection so the page is never empty. If that profile does not exist on your machine, add your own connection and set it as default — the seed row can be ignored.
+The first launch starts with an empty connection list. Add an API connection or choose an existing local Codex profile. The first enabled connection becomes the default.
 
 Register the MCP server from the repository root:
 
@@ -159,7 +159,7 @@ npm test
 # real file write, shell command, session continuation and profile export
 npm run test:cli
 
-# Optional: two turns against the configured provider, may consume quota
+# Optional: set CODEX_SUBAGENT_PROFILE to a local profile before running two live turns
 npm run test:live
 ```
 
@@ -173,8 +173,8 @@ npm run test:live
 | `CODEX_SUBAGENT_MAX_CONCURRENT` | `2` per MCP process, maximum 16 |
 | `CODEX_SUBAGENT_MAX_OUTPUT_CHARS` | `4000` UTF-16 characters per page, 256–16000 |
 | `CODEX_SUBAGENT_CODEX_BIN` | Newest installed desktop Codex build on Windows, otherwise `codex` on `PATH` |
-| `CODEX_SUBAGENT_PROFILE` | `workbuddy` |
-| `CODEX_SUBAGENT_MODEL` | `deepseek-v4.1-flash` |
+| `CODEX_SUBAGENT_PROFILE` | Unset. Optional profile for calls without a saved default connection. |
+| `CODEX_SUBAGENT_MODEL` | Unset. Optional model override for direct profile calls. |
 | `CODEX_SUBAGENT_MAX_DEPTH` | `2` |
 | `CODEX_HOME` | `~/.codex` |
 

@@ -508,8 +508,6 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('export-connection').title = '导出已保存的配置；未保存的修改不包含在内';
     $('remove-connection').hidden = !connection;
     $('connection-more').hidden = !connection; $('connection-more').open = false;
-    $('remove-connection').disabled = connection?.id === config?.default_connection_id;
-    $('remove-connection').title = connection?.id === config?.default_connection_id ? '先选择另一个默认连接，才能移除此连接' : '移除模型连接';
     $('test-connection').disabled = !connection;
     result(); syncFields(); renderCards(); savedSignature = signature();
     void loadProfileEditor({ refreshList: true });
@@ -517,8 +515,10 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   function renderCards() {
     if (!config) return;
     hideApiKey();
-    $('remove-connection').disabled = editingId === config.default_connection_id;
-    $('remove-connection').title = editingId === config.default_connection_id ? '先选择另一个默认连接，才能移除此连接' : '移除模型连接';
+    const mustSwitchDefault = id => Boolean(id && id === config.default_connection_id && config.connections.some(c => c.id !== id && c.enabled));
+    const preventRemoval = mustSwitchDefault(editingId);
+    $('remove-connection').disabled = preventRemoval;
+    $('remove-connection').title = preventRemoval ? '先选择另一个默认连接，才能移除此连接' : '移除模型连接';
     // Park the shared form before replacing the rows so its values and listeners survive.
     const editor = $('connection-editor'); $('connection-editor-home').append(editor); editor.hidden = true;
     const fragment = document.createDocumentFragment();
@@ -565,7 +565,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
         enableSwitch.setAttribute('role', 'switch');
         enableSwitch.setAttribute('aria-label', `启用 ${name}`);
         enableSwitch.setAttribute('aria-checked', String(enabled));
-        enableSwitch.disabled = isDefault && enabled;
+        enableSwitch.disabled = enabled && mustSwitchDefault(id);
         enableSwitch.title = enableSwitch.disabled ? '请先切换默认连接' : enabled ? '停用连接' : '启用连接';
         enableSwitch.addEventListener('click', async () => {
           if (busy || enableSwitch.disabled) return;
@@ -613,6 +613,9 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     if (editorOpen && !editingId) fragment.append(row());
     for (const connection of config.connections) {
       fragment.append(row(connection));
+    }
+    if (!editorOpen && !config.connections.length) {
+      fragment.append(el('p', 'connections-empty', '暂无模型连接。点击右上角的「添加连接」开始配置。'));
     }
     $('connections-list').replaceChildren(fragment);
   }

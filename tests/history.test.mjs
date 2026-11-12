@@ -107,10 +107,11 @@ test('continued MCP jobs merge into one conversation and match native logs for o
 
 test('new jobs retain a viewable conversation even if native Codex history is unavailable', async t => {
   const f = fixture();
-  const manager = new JobManager({ stateDir: f.stateDir, codexBin: process.execPath, codexArgs: [fileURLToPath(new URL('./fake-codex.mjs', import.meta.url))], env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0' } });
+  const manager = new JobManager({ stateDir: f.stateDir, codexBin: process.execPath, codexArgs: [fileURLToPath(new URL('./fake-codex.mjs', import.meta.url))], env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0', CODEX_SUBAGENT_MODEL: '' } });
   t.after(() => manager.shutdown());
-  const result = await manager.call({ prompt: JSON.stringify({ text: 'FALLBACK_RESULT' }) });
+  const result = await manager.call({ prompt: JSON.stringify({ text: 'FALLBACK_RESULT' }), profile: 'test-profile' });
   const repo = new SessionRepository(f); const detail = await repo.get(result.session_id);
+  assert.equal(detail.session.model, null);
   assert.equal(detail.entries[0].kind, 'user');
   assert.ok(detail.entries.some(e => e.kind === 'tool' && String(e.output).includes('PRIVATE_TOOL_OUTPUT')));
   assert.equal(detail.entries.at(-1).text, 'FALLBACK_RESULT');

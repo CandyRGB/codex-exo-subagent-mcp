@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ModelStore, WindowsSecretCodec } from '../model-store.mjs';
@@ -41,16 +41,28 @@ async function inference(v, store, c, body) {
   return { status: r.status, events, final: events.find(e => e.type === 'response.completed')?.response };
 }
 
-test('configuration preserves the current profile and supports explicit defaults and model lists', () => {
-  const store = new ModelStore({ stateDir: fixture() });
-  assert.equal(store.select({}).profile, 'workbuddy');
+test('configuration starts empty and preserves explicitly configured connections and models', () => {
+  const store = new ModelStore({ stateDir: fixture(), env: {} });
+  assert.deepEqual(store.describe(), { default_connection_id: null, default_model: null, connections: [] });
+  assert.throws(() => store.select({}), /尚未配置默认模型连接/);
+  assert.equal(existsSync(store.path), false);
   const c = save(store, { models: ['a', 'b'], default_model: 'b' });
+  assert.equal(store.select({}).model, 'b');
   store.setDefault(c.id, 'a'); assert.equal(store.select({}).model, 'a');
   assert.equal(store.select({ model: 'custom-alias' }).model, 'custom-alias');
   assert.equal(store.describe(c.id).connections[0].models.length, 2);
+  const profile = save(store, { kind: 'profile', profile: 'test-profile' });
   assert.throws(() => store.remove(c.id), /默认/);
-  store.setDefault('current-profile', 'deepseek-v4.1-flash'); store.remove(c.id);
-  assert.equal(store.read().connections.length, 1);
+  store.setDefault(profile.id, profile.default_model);
+  store.remove(c.id);
+  const reopened = new ModelStore({ stateDir: store.stateDir, env: {} });
+  assert.equal(reopened.select({}).profile, 'test-profile');
+  reopened.setEnabled(profile.id, false);
+  assert.equal(reopened.describe().default_connection_id, null);
+  reopened.setEnabled(profile.id, true);
+  assert.equal(reopened.select({}).connection.id, profile.id);
+  reopened.remove(profile.id);
+  assert.deepEqual(reopened.describe(), { default_connection_id: null, default_model: null, connections: [] });
 });
 
 test('settings controller unifies models, preserves per-model drafts and tests only saved settings', async t => {
@@ -64,11 +76,12 @@ test('settings controller unifies models, preserves per-model drafts and tests o
     models: ['a', 'b'], default_model: 'a', context_window: 131072, auth_header: 'X-API-Key',
     reasoning_effort: 'high', model_reasoning: { b: { effort_set: 'deepseek', reasoning_effort: 'max', thinking_format: 'thinking', thinking_mode: 'enabled' } },
   });
+  save(store, { kind: 'profile', profile: 'test-profile' });
   store.setDefault(c.id, 'a');
   const v = await viewer(t, store); let probes = 0, saved = 0;
   const codexHome = v.repository.codexHome;
   mkdirSync(codexHome, { recursive: true });
-  const profilePath = join(codexHome, 'workbuddy.config.toml');
+  const profilePath = join(codexHome, 'test-profile.config.toml');
   writeFileSync(profilePath, 'model = "original"\n');
   writeFileSync(join(codexHome, 'alternate.config.toml'), 'model = "alternate"\n');
   v.gateway.probe = async (id, model) => { probes++; return { ok: true, tool_calling: true, message: `TEST ${model}` }; };
@@ -200,15 +213,15 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   await $(`connection-toggle-${profile.id}`).dispatch('click');
   assert.equal($('connection-kind-field').hidden, true);
   await eventually(() => !$('profile-content').disabled);
-  assert.deepEqual($('connection-profile').children.map(option => option.value), ['', 'alternate', 'workbuddy']);
-  assert.equal($('connection-profile').value, 'workbuddy');
+  assert.deepEqual($('connection-profile').children.map(option => option.value), ['', 'alternate', 'test-profile']);
+  assert.equal($('connection-profile').value, 'test-profile');
   assert.equal($('profile-content').value, 'model = "original"\n');
   $('profile-content').value = 'model = "edited"\n';
   await $('profile-content').dispatch('input');
   $('connection-profile').value = 'alternate';
   await $('connection-profile').dispatch('change');
   assert.equal($('profile-content').value, 'model = "alternate"\n');
-  $('connection-profile').value = 'workbuddy';
+  $('connection-profile').value = 'test-profile';
   await $('connection-profile').dispatch('change');
   assert.equal($('profile-content').value, 'model = "edited"\n');
   assert.equal(readFileSync(profilePath, 'utf8'), 'model = "original"\n');
@@ -450,17 +463,18 @@ test('profile export reuses runtime provider configuration without exporting sec
   assert.ok(!JSON.stringify(data).includes(store.gatewayToken()));
   assert.ok(data.launch.includes(store.tokenPath));
   assert.equal(readFileSync(store.path, 'utf8'), before);
-  assert.equal((await fetch(`${v.url}/api/config/connections/current-profile/export-profile`, { method: 'POST' })).status, 400);
   store.save({ ...c, enabled: false }, c.id);
   assert.equal((await fetch(route, { method: 'POST' })).status, 400);
+  const profile = save(store, { kind: 'profile', profile: 'test-profile' });
+  assert.equal((await fetch(`${v.url}/api/config/connections/${profile.id}/export-profile`, { method: 'POST' })).status, 400);
 });
 
 test('invalid endpoints and authentication are rejected without changing persisted settings', () => {
-  const store = new ModelStore({ stateDir: fixture() }); const initial = readFileSync(store.path, 'utf8');
+  const store = new ModelStore({ stateDir: fixture() });
   for (const base_url of ['file:///etc/passwd', 'https://user:secret@example.test/v1', 'https://example.test/v1?api_key=secret']) assert.throws(() => save(store, { base_url }), /API 地址/);
   assert.throws(() => save(store, { auth_mode: 'env', api_key_env: 'INVALID-NAME' }), /环境变量/);
   assert.throws(() => save(store, { auth_header: 'Host' }), /请求头/);
-  assert.equal(readFileSync(store.path, 'utf8'), initial);
+  assert.equal(existsSync(store.path), false);
 });
 
 test('Windows user encryption stores no plaintext API key and blank edits preserve the secret', { skip: process.platform !== 'win32' }, () => {
@@ -484,7 +498,8 @@ test('runtime picks live settings; resumes keep their connection and reject chan
   const argv = JSON.parse(result.result.text).argv;
   assert.ok(argv.some(arg => arg.includes(`/inference/${c.id}/v1`))); assert.ok(!argv.includes('--profile'));
   assert.ok(!argv.includes(store.gatewayToken()));
-  store.setDefault('current-profile', 'deepseek-v4.1-flash');
+  const profile = save(store, { kind: 'profile', profile: 'test-profile' });
+  store.setDefault(profile.id, profile.default_model);
   const continued = await manager.call({ action: 'resume', job_id: result.job_id, prompt: JSON.stringify({ text: 'RESUMED' }) });
   const done = await manager.wait(continued.job_id, 5);
   assert.equal(done.connection_id, c.id); assert.equal(done.session_id, result.session_id);
@@ -562,9 +577,12 @@ test('configuration HTTP CRUD supports saved connections and rejects foreign-ori
   const options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) };
   assert.equal((await fetch(v.url + '/api/config/connections', { ...options, headers: { ...options.headers, Origin: 'https://foreign.test' } })).status, 403);
   const saved = await (await fetch(v.url + '/api/config/connections', options)).json(); const id = saved.connections.at(-1).id;
+  assert.equal(saved.default_connection_id, id);
   assert.equal((await fetch(v.url + '/api/config/default', { method: 'PATCH', headers: options.headers, body: JSON.stringify({ connection_id: id, model: 'qwen-coder' }) })).status, 200);
   assert.equal(store.select({}).model, 'qwen-coder');
-  assert.equal((await fetch(v.url + '/api/config/connections/' + id, { method: 'DELETE' })).status, 400);
+  const removed = await fetch(v.url + '/api/config/connections/' + id, { method: 'DELETE' });
+  assert.equal(removed.status, 200);
+  assert.equal((await removed.json()).default_connection_id, null);
 });
 
 test('model discovery honors no-auth selection even if a hidden input still contains an API key', async t => {

@@ -104,8 +104,6 @@ export class JobManager {
     this.env = options.env || process.env;
     this.codexBin = options.codexBin || resolveCodexBinary(this.env);
     this.codexArgs = options.codexArgs || [];
-    this.defaultProfile = this.env.CODEX_SUBAGENT_PROFILE || 'workbuddy';
-    this.defaultModel = this.env.CODEX_SUBAGENT_MODEL || 'deepseek-v4.1-flash';
     this.depth = Number(this.env.CODEX_SUBAGENT_DEPTH || 0);
     this.maxDepth = Number(this.env.CODEX_SUBAGENT_MAX_DEPTH || 2);
     this.maxConcurrent = integer(Number(this.env.CODEX_SUBAGENT_MAX_CONCURRENT || 2), 2, 1, 16, 'max concurrency');
@@ -198,7 +196,7 @@ export class JobManager {
     const model = selected.model;
     const profile = selected.profile;
     const connection = selected.connection;
-    if (typeof model !== 'string' || !model.trim() || model.length > 200 || /[\r\n]/.test(model)) throw new Error('Invalid model');
+    if (model !== null && (typeof model !== 'string' || !model.trim() || model.length > 200 || /[\r\n]/.test(model))) throw new Error('Invalid model');
     if (profile !== null && (typeof profile !== 'string' || !/^[A-Za-z0-9_-]+$/.test(profile))) throw new Error('Invalid profile name');
     const sandbox = parent?.sandbox || args.sandbox || 'workspace-write';
     if (!['read-only', 'workspace-write', 'danger-full-access'].includes(sandbox)) throw new Error('Invalid sandbox');
@@ -236,7 +234,7 @@ export class JobManager {
     }
     const resultPath = join(this.jobDir(job.job_id), 'result.txt');
     const argv = [
-      ...this.codexArgs, 'exec', ...(profile ? ['--profile', profile] : []), '--model', model, '--cd', cwd,
+      ...this.codexArgs, 'exec', ...(profile ? ['--profile', profile] : []), ...(model ? ['--model', model] : []), '--cd', cwd,
       '--sandbox', sandbox, '--skip-git-repo-check', '--json', '--color', 'never',
       '--output-last-message', resultPath, '-c', 'mcp_servers.codex-subagent.enabled=false',
     ];

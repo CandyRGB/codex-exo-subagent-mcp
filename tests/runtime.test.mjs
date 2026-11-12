@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { JobManager } from '../runtime.mjs';
+import { ModelStore } from '../model-store.mjs';
 
 const suiteRoot = fileURLToPath(new URL('../.test-runs/', import.meta.url));
 const fakeCodex = fileURLToPath(new URL('./fake-codex.mjs', import.meta.url));
@@ -18,7 +19,7 @@ function directory() {
 function manager(t, overrides = {}) {
   const instance = new JobManager({
     codexBin: process.execPath, codexArgs: [fakeCodex], stateDir: directory(),
-    env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0', CODEX_SUBAGENT_MAX_CONCURRENT: '2' },
+    env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0', CODEX_SUBAGENT_MAX_CONCURRENT: '2', CODEX_SUBAGENT_PROFILE: 'test-profile', CODEX_SUBAGENT_MODEL: 'test-model' },
     ...overrides,
   });
   t.after(() => instance.shutdown());
@@ -34,14 +35,19 @@ test('legacy prompt waits, sends task through stdin, keeps route, sandbox and de
   const actual = JSON.parse(result.result.text);
   assert.equal(actual.argv.at(-1), '-');
   assert.ok(!actual.argv.some(arg => arg.includes('reportArgs')));
-  assert.equal(actual.argv[actual.argv.indexOf('--profile') + 1], 'workbuddy');
-  assert.equal(actual.argv[actual.argv.indexOf('--model') + 1], 'deepseek-v4.1-flash');
+  assert.equal(actual.argv[actual.argv.indexOf('--profile') + 1], 'test-profile');
+  assert.equal(actual.argv[actual.argv.indexOf('--model') + 1], 'test-model');
   assert.equal(actual.argv[actual.argv.indexOf('--sandbox') + 1], 'read-only');
   assert.ok(actual.argv.includes('mcp_servers.codex-subagent.enabled=false'));
   assert.equal(actual.depth, '1');
   assert.equal(result.usage.status, 'reported');
   assert.equal(result.usage.input_tokens, 101);
   assert.equal(result.progress.completed_commands, 1);
+  const profileOnly = manager(t, { env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0', CODEX_SUBAGENT_MODEL: '' } });
+  const profileResult = await profileOnly.call({ prompt: prompt({ reportArgs: true }), profile: 'another-profile' });
+  const profileArgs = JSON.parse(profileResult.result.text).argv;
+  assert.equal(profileArgs[profileArgs.indexOf('--profile') + 1], 'another-profile');
+  assert.ok(!profileArgs.includes('--model'));
 });
 
 test('background task is queryable, bounded wait does not cancel, and status omits result/logs', async t => {
@@ -167,7 +173,7 @@ test('abandoned job is interrupted, and a live foreign owner cannot be killed', 
 test('MCP stdio handshake, compact single-tool schema, async execution, and disconnect cleanup', async t => {
   const stateDir = directory();
   const child = spawn(process.execPath, [fileURLToPath(new URL('./fixture-server.mjs', import.meta.url))], {
-    env: { ...process.env, TEST_STATE_DIR: stateDir, CODEX_SUBAGENT_DEPTH: '0' },
+    env: { ...process.env, TEST_STATE_DIR: stateDir, CODEX_SUBAGENT_DEPTH: '0', CODEX_SUBAGENT_PROFILE: '', CODEX_SUBAGENT_MODEL: '' },
     windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
   });
   const exit = new Promise(done => child.once('exit', done));
@@ -199,6 +205,11 @@ test('MCP stdio handshake, compact single-tool schema, async execution, and disc
   const tools = (await rpc('tools/list')).result.tools;
   assert.equal(tools.length, 1);
   assert.ok(tools[0].inputSchema.properties.action.enum.includes('resume'));
+  assert.deepEqual((await tool({ action: 'models' })).connections, []);
+  const unconfigured = await tool({ prompt: 'No default connection' });
+  assert.equal(unconfigured.isError, true);
+  assert.match(unconfigured.error, /尚未配置默认模型连接/);
+  new ModelStore({ stateDir }).save({ name: 'Fixture profile', kind: 'profile', profile: 'test-profile', models: ['test-model'] });
   assert.equal((await tool({ prompt: prompt({ text: 'MCP_OK' }) })).result.text, 'MCP_OK');
   const started = await tool({ action: 'start', prompt: prompt({ delay: 10000 }) });
   assert.equal(started.status, 'running');
