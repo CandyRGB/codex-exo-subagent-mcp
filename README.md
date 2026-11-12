@@ -9,7 +9,7 @@
   ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-2f6feb?style=flat-square)
   ![Platform](https://img.shields.io/badge/verified-Windows%2011-0078d4?style=flat-square)
 
-  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/lang-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-2f6feb?style=flat-square" alt="切换到简体中文"></a>
+  [English](README.md) | [简体中文](README.zh-CN.md)
 
   [Features](#features) · [Requirements](#requirements) · [Quick start](#quick-start) · [Model connections](#model-connections) · [The tool](#the-codex_subagent-tool) · [Local workspace](#local-workspace) · [Reference](docs/REFERENCE.md)
 

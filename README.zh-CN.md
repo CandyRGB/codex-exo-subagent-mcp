@@ -9,7 +9,7 @@
   ![依赖](https://img.shields.io/badge/运行依赖-0-2f6feb?style=flat-square)
   ![平台](https://img.shields.io/badge/已验证-Windows%2011-0078d4?style=flat-square)
 
-  <a href="README.md"><img src="https://img.shields.io/badge/lang-English-2f6feb?style=flat-square" alt="Switch to English"></a>
+  [English](README.md) | [简体中文](README.zh-CN.md)
 
   [功能](#功能) · [环境要求](#环境要求) · [快速开始](#快速开始) · [模型连接](#模型连接) · [工具调用](#codex_subagent-工具) · [本地工作区](#本地工作区) · [完整参考](docs/REFERENCE.md)
 
