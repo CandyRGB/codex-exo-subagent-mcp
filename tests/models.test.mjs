@@ -59,6 +59,8 @@ test('configuration starts empty and preserves explicitly configured connections
   assert.equal(reopened.select({}).profile, 'test-profile');
   reopened.setEnabled(profile.id, false);
   assert.equal(reopened.describe().default_connection_id, null);
+  assert.deepEqual(reopened.describe().connections, []);
+  assert.deepEqual(reopened.describe(profile.id).connections.map(({ id, enabled }) => [id, enabled]), [[profile.id, false]]);
   reopened.setEnabled(profile.id, true);
   assert.equal(reopened.select({}).connection.id, profile.id);
   reopened.remove(profile.id);

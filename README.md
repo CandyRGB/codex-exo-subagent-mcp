@@ -104,7 +104,7 @@ Any saved API connection can be exported from the **More** menu as a Codex CLI p
 | `resume` | `job_id`, `prompt` | Continue the recorded Codex session; returns a new `job_id`. |
 | `result` | `job_id`, `offset` | Read a page of the saved final reply. |
 | `list` | `limit` | Recent tasks, newest first. |
-| `models` | `connection_id` | Configured connections and model IDs, never credentials. |
+| `models` | `connection_id` | Enabled connections and model IDs, never credentials. A disabled connection comes back with `enabled: false` when queried by ID. |
 | `viewer` | — | URL of the local workspace. |
 
 ```json

@@ -13,7 +13,7 @@ export function toolDefinition(manager) {
     inputSchema: {
       type: 'object', additionalProperties: false,
       properties: {
-        action: { type: 'string', enum: ['run', 'start', 'status', 'wait', 'cancel', 'resume', 'result', 'list', 'viewer', 'models'], description: 'Default run. start/resume return a job_id immediately. models lists available connections.' },
+        action: { type: 'string', enum: ['run', 'start', 'status', 'wait', 'cancel', 'resume', 'result', 'list', 'viewer', 'models'], description: 'Default run. start/resume return a job_id immediately. models lists enabled connections; pass connection_id to inspect one, including a disabled connection.' },
         prompt: { type: 'string', description: 'Required for run/start/resume. Task or follow-up.' },
         job_id: { type: 'string', description: 'Required for status/wait/cancel/resume/result.' },
         cwd: { type: 'string', description: 'Existing absolute working directory; resume keeps the original.' },

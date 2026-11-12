@@ -57,7 +57,7 @@ Viewer settings: `CODEX_SUBAGENT_VIEWER_PORT` (default `43187`), `CODEX_SUBAGENT
 | `result` | `job_id` | Read a page of the saved final reply. Use `offset=next_offset` for the next page. |
 | `list` | none | List recent tasks; `limit` defaults to 10 and has a maximum of 50. |
 | `viewer` | none | Return the local history page URL. Task replies also include a direct session URL once the viewer has started. |
-| `models` | none | List configured connection IDs and model IDs without credentials. Pass `connection_id` to inspect one connection's model list. |
+| `models` | none | List enabled connections and their model IDs without credentials. Passing `connection_id` returns that connection even when it is disabled, flagged with `enabled: false`. |
 
 Example requests:
 

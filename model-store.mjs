@@ -209,8 +209,9 @@ export class ModelStore {
   }
   describe(id = null) {
     const config = this.read(); const selected = config.connections.find(c => c.id === config.default_connection_id);
+    const visible = id ? config.connections.filter(c => c.id === id) : config.connections.filter(c => c.enabled);
     return { default_connection_id: config.default_connection_id, default_model: selected?.default_model ?? null,
-      connections: config.connections.filter(c => c.enabled && (!id || c.id === id)).map(c => ({ id: c.id, name: c.name, kind: c.kind, protocol: c.protocol, default_model: c.default_model, models: c.models.slice(0, id ? 100 : 10), more_models: Math.max(0, c.models.length - (id ? 100 : 10)) })) };
+      connections: visible.map(c => ({ id: c.id, name: c.name, kind: c.kind, protocol: c.protocol, enabled: c.enabled, default_model: c.default_model, models: c.models.slice(0, id ? 100 : 10), more_models: Math.max(0, c.models.length - (id ? 100 : 10)) })) };
   }
 }
 

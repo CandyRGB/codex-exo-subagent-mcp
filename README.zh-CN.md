@@ -104,7 +104,7 @@ API 连接的参数由网关按实际请求的模型注入，并清除 CLI 继�
 | `resume` | `job_id`、`prompt` | 继续已记录的 Codex 会话，返回新的 `job_id`。 |
 | `result` | `job_id`、`offset` | 分页读取已保存的最终回复。 |
 | `list` | `limit` | 最近的任务，按时间倒序。 |
-| `models` | `connection_id` | 已配置的连接与模型 ID，不含凭据。 |
+| `models` | `connection_id` | 已启用的连接与模型 ID，不含凭据；按 ID 查询时也会返回已停用的连接并标记 `enabled: false`。 |
 | `viewer` | — | 本地工作区地址。 |
 
 ```json
