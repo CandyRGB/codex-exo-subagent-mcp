@@ -13,6 +13,9 @@
 *.log
 *.tmp
 
+# Local agent workspace
+/.workbuddy/
+
 # Local dependencies and environment
 /node_modules/
 .env
