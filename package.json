@@ -2,6 +2,7 @@
   "name": "codex-exo-subagent-mcp",
   "version": "4.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Configurable Codex subagent MCP with a local session workspace and model gateway",
   "type": "module",
   "engines": {
