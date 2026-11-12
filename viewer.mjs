@@ -14,6 +14,10 @@ import { getProfile, listProfiles, profileRequestLimit, saveProfile } from './pr
 const root = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_PORT = 43187;
 export const stateIdentity = stateDir => createHash('sha256').update(resolve(stateDir).toLowerCase()).digest('hex').slice(0, 16);
+const packageVersion = (() => {
+  try { return JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version || '0.0.0'; }
+  catch { return '0.0.0'; }
+})();
 
 export async function createViewer({ stateDir = join(root, 'state'), codexHome = process.env.CODEX_HOME || join(homedir(), '.codex'), port = DEFAULT_PORT, host = '127.0.0.1', modelStore = null } = {}) {
   if (host !== '127.0.0.1') throw new Error('The session viewer only binds to loopback');
@@ -38,7 +42,7 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
       if (origin && ![`http://127.0.0.1:${boundPort}`, `http://localhost:${boundPort}`].includes(origin)) { send(403, { error: 'Cross-origin requests are not allowed' }); return; }
       const url = new URL(request.url, `http://127.0.0.1:${boundPort}`);
       if (request.method === 'GET' && url.pathname === '/health') {
-        send(200, { service: 'codex-subagent-viewer', version: '4.0.0', state_id: stateIdentity(stateDir) }); return;
+        send(200, { service: 'codex-subagent-viewer', version: packageVersion, state_id: stateIdentity(stateDir), codex_home: repository.codexHome, pid: process.pid }); return;
       }
       const inference = url.pathname.match(/^\/inference\/([A-Za-z0-9_-]+)\/v1\/responses$/);
       if (inference && request.method === 'POST') { await gateway.handle(request, response, inference[1]); return; }

@@ -8,6 +8,7 @@ import { zstdCompressSync } from 'node:zlib';
 import { get as httpGet } from 'node:http';
 import { SessionRepository, parseRollout } from '../history.mjs';
 import { createViewer } from '../viewer.mjs';
+import { viewerMatches } from '../viewer-client.mjs';
 import { JobManager } from '../runtime.mjs';
 import { commandOutput, coalesceTerminalEntries, completeCommandOutput, groupCommandRuns, commandGroupOpen } from '../web/tool-output.js';
 import { ModelSelection } from '../web/model-selection.js';
@@ -105,6 +106,14 @@ test('continued MCP jobs merge into one conversation and match native logs for o
   assert.equal((await repo.get(native.id)).entries.length, 3);
 });
 
+test('viewer reuse requires the same version and Codex home', () => {
+  const health = { service: 'codex-subagent-viewer', version: '4.0.0', codex_home: 'C:\\Users\\example\\.codex' };
+  assert.equal(viewerMatches(health, { version: '4.0.0', codexHome: health.codex_home }), true);
+  assert.equal(viewerMatches(health, { version: '4.0.1', codexHome: health.codex_home }), false);
+  assert.equal(viewerMatches(health, { version: '4.0.0', codexHome: 'C:\\Users\\example\\.codex-alt' }), false);
+  assert.equal(viewerMatches({ ...health, codex_home: undefined }, { version: '4.0.0', codexHome: health.codex_home }), false);
+});
+
 test('new jobs retain a viewable conversation even if native Codex history is unavailable', async t => {
   const f = fixture();
   const manager = new JobManager({ stateDir: f.stateDir, codexBin: process.execPath, codexArgs: [fileURLToPath(new URL('./fake-codex.mjs', import.meta.url))], env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0', CODEX_SUBAGENT_MODEL: '' } });
@@ -155,6 +164,10 @@ test('HTTP serves real histories and assets; rejects foreign origins, DNS rebind
   t.after(() => viewer.close());
   const base = viewer.url;
   assert.equal((await fetch(base + '/')).status, 200);
+  const health = await (await fetch(base + '/health')).json();
+  assert.equal(health.version, JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
+  assert.equal(health.codex_home, viewer.repository.codexHome);
+  assert.equal(health.pid, process.pid);
   assert.equal((await fetch(base + '/app.js')).status, 200);
   assert.equal((await fetch(base + '/dropdown.js')).status, 200);
   assert.equal((await fetch(base + '/api-endpoint.js')).status, 200);
