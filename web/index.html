@@ -18,6 +18,8 @@
   <symbol id="i-pin" viewBox="0 0 24 24"><path d="m9 3 9 9-3 1-2 5-3-3-6 6m6-6-4-4 5-2 1-3Z"/></symbol>
   <symbol id="i-edit" viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1L21 7l-5-5L4 14Z"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 24 24"><path d="M10.3 4.8a2 2 0 0 1 3.4 0l7.7 13.5a2 2 0 0 1-1.7 3H4.3a2 2 0 0 1-1.7-3zM12 9v4m0 4h.01"/></symbol>
+  <symbol id="i-danger" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"/></symbol>
   <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m6 9 4 3-4 3m7 0h5"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
@@ -41,10 +43,8 @@
   <button class="sidebar-backdrop" id="sidebar-backdrop" aria-label="关闭侧栏"></button>
   <main class="main">
     <header class="topbar"><button id="sidebar-toggle" class="icon-button" title="切换侧栏" aria-label="切换侧栏"><svg><use href="#i-panel"/></svg></button><div class="breadcrumb"><span id="project-label">子代理会话</span><span class="breadcrumb-divider">/</span><span id="breadcrumb-title">会话记录</span></div><button id="new-connection" type="button" class="settings-add-button topbar-add-connection" hidden>＋ 添加连接</button><div class="top-actions" id="top-actions" hidden><button id="pin-button" class="icon-button" title="置顶会话" aria-label="置顶会话"><svg><use href="#i-pin"/></svg></button><a id="export-button" class="icon-button" title="导出会话" aria-label="导出会话"><svg><use href="#i-download"/></svg></a><button id="info-button" class="icon-button" title="会话信息" aria-label="会话信息"><svg><use href="#i-info"/></svg></button><button id="rename-button" class="icon-button" title="重命名会话" aria-label="重命名会话"><svg><use href="#i-edit"/></svg></button></div></header>
-    <div id="error-banner" class="error-banner" role="status" hidden></div>
     <section id="settings-page" class="settings-page" aria-label="模型与连接" hidden><div class="settings-content">
 
-      <div id="settings-load-error" class="settings-load-error" role="status" hidden></div>
       <div id="connections-list" class="connections-list"></div>
       <div id="connection-editor-home" hidden><section id="connection-editor" class="connection-editor" hidden>
       <form id="connection-form">
@@ -83,7 +83,6 @@
         </div></div>
           <div class="model-table-scroll"><table class="model-table"><thead><tr><th scope="col">模型 ID</th><th scope="col">默认</th><th scope="col">操作</th></tr></thead><tbody id="model-rows"></tbody></table></div>
         </div>
-        <div id="connection-test-result" class="connection-test-result" role="status" hidden></div>
         <div class="connection-form-actions"><details id="connection-more" class="connection-more" hidden><summary>更多</summary><div class="connection-more-actions"><button id="export-connection" type="button">导出为 profile</button><button id="remove-connection" type="button" class="remove-connection">移除连接</button></div></details><button id="test-connection" type="button" class="secondary-button" disabled>测试连接</button><button id="save-connection" type="submit" class="primary-button">保存连接</button></div><p id="connection-test-hint" class="settings-form-note">测试仅使用已保存的设置，可能计入服务用量。</p>
       </form></section></div>
     </div></section>
@@ -129,9 +128,7 @@
           <input id="model-custom-effort" maxlength="64" autocomplete="off" placeholder="填写服务支持的值">
         </div>
       </div>
-      <p id="model-effort-hint" class="settings-form-note" hidden></p>
     </div>
-    <p id="model-dialog-result" class="connection-test-result" role="status" hidden></p>
     <div class="dialog-actions">
       <button id="cancel-model-dialog" type="button" class="secondary-button">取消</button>
       <button id="test-model-draft" type="button" class="secondary-button" title="使用当前填写的参数发送一次推理请求，可能计入服务用量">测试模型</button>
@@ -141,5 +138,5 @@
 </dialog>
 <dialog id="delete-connection-dialog" class="dialog"><div class="dialog-title"><h2>移除模型连接</h2></div><p class="delete-connection-note">移除此连接及其保存的凭据。已保存的会话记录仍可查看，使用此连接的后续任务需要重新配置。</p><div class="dialog-actions"><button type="button" class="secondary-button" data-close-dialog>取消</button><button id="confirm-remove-connection" type="button" class="primary-button">移除连接</button></div></dialog>
 <dialog id="export-profile-dialog" class="dialog export-profile-dialog"><div class="dialog-title"><h2>导出已保存的连接</h2><button type="button" class="secondary-button" data-close-dialog>关闭</button></div><p id="export-profile-note" class="delete-connection-note"></p><p>配置文件保存位置</p><code id="export-profile-target"></code><pre id="export-profile-content"></pre><p>保存文件后，在终端运行</p><pre id="export-profile-launch"></pre><div class="dialog-actions"><button type="button" id="download-profile" class="primary-button">下载 profile 文件</button></div></dialog>
-<div id="toast" class="toast" role="status" hidden></div>
+<div id="page-messages" class="page-messages" popover="manual" aria-label="页面消息" hidden></div>
 </body></html>

@@ -66,7 +66,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       apiKeyInput.value = revealedSavedKey;
       setApiKeyVisible(true);
     } catch (error) {
-      if (keyRevealRequest === request) toast(error.message);
+      if (keyRevealRequest === request) toast(error.message, 'danger');
     } finally {
       if (keyRevealRequest === request) {
         keyRevealRequest = null;
@@ -74,7 +74,9 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       }
     }
   }
-  function result(message = '', ok = true) { const target = $('connection-test-result'); target.hidden = !message; target.textContent = message; target.className = `connection-test-result${ok ? ' success' : ' error'}`; }
+  function result(message = '', type = 'info', persistent = false) {
+    toast(message, type, { key: 'connection-operation', persistent });
+  }
   function busyState(value) {
     busy = value;
     for (const id of ['save-connection', 'test-connection', 'discover-models', 'new-connection', 'export-connection', 'add-model', 'check-api-service']) $(id).disabled = value;
@@ -170,11 +172,8 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       ...(set === 'provider' ? { effort_set: 'provider' } : {}),
     });
   }
-  function modelResult(message = '', ok = true) {
-    const target = $('model-dialog-result');
-    target.hidden = !message;
-    target.textContent = message;
-    target.className = `connection-test-result ${ok ? 'success' : 'error'}`;
+  function modelResult(message = '', type = 'info', persistent = false) {
+    toast(message, type, { key: 'model-operation', persistent });
   }
   function reportedModelEfforts() {
     const model = $('model-id-input').value.trim();
@@ -196,10 +195,12 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('model-effort-field').hidden = set === 'service' || set === 'custom';
     $('read-model-efforts').hidden = set !== 'provider';
     $('model-custom-effort-field').hidden = set !== 'custom';
-    const hint = $('model-effort-hint');
-    hint.textContent = set === 'provider' && !reported.length ? '当前没有该模型的档位数据，可点击“读取档位”。' : '';
-    hint.hidden = !hint.textContent;
     selects.refresh();
+  }
+  function announceMissingEfforts() {
+    if ($('model-effort-set').value === 'provider' && !reportedModelEfforts().length) {
+      modelResult('当前没有该模型的档位数据，可点击“读取档位”。');
+    }
   }
   function openModelDialog(model = '', editing = false) {
     if (busy) return;
@@ -220,6 +221,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     syncModelEffort(thinking?.reasoning_effort || '');
     modelResult();
     modelDialog.showModal();
+    announceMissingEfforts();
     $('model-id-input').focus();
   }
   function readModelDraft() {
@@ -248,6 +250,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     selects.close();
     modelRequest?.abort();
     setModelRequest(null);
+    modelResult();
     if (modelDialog.open) modelDialog.close();
   }
   async function testModelDraft() {
@@ -260,21 +263,21 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       input = draft(next.candidate);
       if (!input.name) input.name = '未命名连接';
     } catch (error) {
-      modelResult(error.message, false);
+      modelResult(error.message, 'warning');
       return;
     }
     const request = new AbortController();
     setModelRequest(request);
-    modelResult('正在测试模型…');
+    modelResult('正在测试模型…', 'info', true);
     try {
       const check = await api('/api/config/test-model', {
         method: 'POST',
         ...payload({ connection: input, connection_id: editingId, model }),
         signal: AbortSignal.any([request.signal, AbortSignal.timeout(50000)]),
       });
-      if (modelRequest === request) modelResult(check.message, check.tool_calling !== false);
+      if (modelRequest === request) modelResult(check.message, check.tool_calling === false ? 'warning' : 'info');
     } catch (error) {
-      if (modelRequest === request) modelResult(error.message, false);
+      if (modelRequest === request) modelResult(error.message, 'danger');
     } finally {
       if (modelRequest === request) setModelRequest(null);
     }
@@ -282,13 +285,13 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   async function readModelEfforts() {
     if (modelRequest || !modelDialog.open) return;
     if (!$('model-id-input').value.trim()) {
-      modelResult('请先填写模型 ID。', false);
+      modelResult('请先填写模型 ID。', 'warning');
       $('model-id-input').focus();
       return;
     }
     const request = new AbortController();
     setModelRequest(request);
-    modelResult('正在读取服务档位…');
+    modelResult('正在读取服务档位…', 'info', true);
     try {
       const catalog = await discoverCatalog(AbortSignal.any([request.signal, AbortSignal.timeout(20000)]));
       if (modelRequest !== request) return;
@@ -296,26 +299,25 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       syncModelEffort(selectedEffort());
       const levels = reportedModelEfforts();
       if (levels.length) modelResult(`已读取 ${levels.length} 个档位。`);
-      else modelResult('服务未返回该模型的档位。可使用服务默认或其他档位方案。', false);
+      else modelResult('服务未返回该模型的档位。可使用服务默认或自定义。', 'warning');
     } catch (error) {
-      if (modelRequest === request) modelResult(error.message, false);
+      if (modelRequest === request) modelResult(error.message, 'danger');
     } finally {
       if (modelRequest === request) setModelRequest(null);
     }
   }
-  function previewEndpoint() {
+  function previewEndpoint(announce = false) {
     const preview = $('connection-endpoint-preview');
     const value = $('connection-base-url').value.trim();
     preview.hidden = !value;
     preview.textContent = '';
-    preview.className = 'endpoint-preview';
     if (!value) return;
     try {
       const baseUrl = normalizeApiBaseUrl(value);
       preview.textContent = `预览: ${inferenceEndpoint(baseUrl, $('connection-protocol').value)}`;
     } catch (error) {
-      preview.textContent = error.message;
-      preview.className = 'endpoint-preview invalid';
+      preview.hidden = true;
+      if (announce) toast(error.message, 'warning', { key: 'form-validation' });
     }
   }
   function usesEnvironmentKey(connection) {
@@ -442,7 +444,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
             toast('新任务将使用所选连接');
             onSaved(config);
           } catch (error) {
-            toast(error.message);
+            toast(error.message, 'danger');
           } finally {
             busyState(false);
           }
@@ -470,7 +472,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
             $(`connection-enable-${id}`)?.focus();
             onSaved(config);
           } catch (error) {
-            toast(error.message);
+            toast(error.message, 'danger');
           } finally {
             enableSwitch.disabled = false;
             busyState(false);
@@ -506,7 +508,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   async function save() {
     if (busy || !$('connection-form').reportValidity()) return;
     if (!modelsOf().length) {
-      result('请至少添加一个模型。', false);
+      result('请至少添加一个模型。', 'warning');
       $('add-model').focus();
       return;
     }
@@ -516,17 +518,17 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       config = await api(previousId ? `/api/config/connections/${previousId}` : '/api/config/connections', { method: previousId ? 'PUT' : 'POST', ...payload(input) });
       const saved = previousId ? config.connections.find(c => c.id === previousId) : config.connections.at(-1);
       populate(saved); toast('模型连接已保存'); onSaved(config);
-    } catch (error) { result(error.message, false); }
+    } catch (error) { result(error.message, 'danger'); }
     finally { busyState(false); }
   }
   async function testConnection() {
     if (busy || !editingId) return;
-    try { if (signature() !== savedSignature) throw new Error(); } catch { result('有未保存的修改，请先保存后再测试。', false); return; }
-    busyState(true); result('正在检查已保存的连接…');
+    try { if (signature() !== savedSignature) throw new Error(); } catch { result('有未保存的修改，请先保存后再测试。', 'warning'); return; }
+    busyState(true); result('正在检查已保存的连接…', 'info', true);
     try {
       const check = await api(`/api/config/connections/${editingId}/test`, { method: 'POST', ...payload({ model: selection.defaultModel }) });
-      result(`${check.message}${check.latency_ms ? ` 耗时 ${(check.latency_ms / 1000).toFixed(1)} 秒。` : ''}`, check.tool_calling !== false);
-    } catch (error) { result(error.message, false); } finally { busyState(false); }
+      result(`${check.message}${check.latency_ms ? ` 耗时 ${(check.latency_ms / 1000).toFixed(1)} 秒。` : ''}`, check.tool_calling === false ? 'warning' : 'info');
+    } catch (error) { result(error.message, 'danger'); } finally { busyState(false); }
   }
   $('connection-form').addEventListener('submit', event => { event.preventDefault(); void save(); });
   $('test-connection').addEventListener('click', () => { void testConnection(); });
@@ -540,6 +542,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   $('model-effort-set').addEventListener('change', () => {
     modelResult();
     syncModelEffort('');
+    announceMissingEfforts();
   });
   $('model-id-input').addEventListener('input', () => syncModelEffort(selectedEffort()));
   $('test-model-draft').addEventListener('click', testModelDraft);
@@ -552,11 +555,12 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       closeModelDialog();
       renderModels();
     } catch (error) {
-      modelResult(error.message, false);
+      modelResult(error.message, 'warning');
     }
   });
-  $('connection-protocol').addEventListener('input', previewEndpoint);
-  $('connection-base-url').addEventListener('input', previewEndpoint);
+  $('connection-protocol').addEventListener('input', () => previewEndpoint());
+  $('connection-base-url').addEventListener('input', () => previewEndpoint());
+  $('connection-base-url').addEventListener('blur', () => previewEndpoint(true));
   $('connection-kind').addEventListener('change', syncFields);
   apiKeyToggle.addEventListener('click', toggleApiKey);
   function discoverCatalog(signal) {
@@ -571,8 +575,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   async function inspectService(loadModels) {
     if (busy) return;
     busyState(true);
-    if (loadModels) result('正在读取模型列表…');
-    else $('check-api-service').textContent = '检查中…';
+    result(loadModels ? '正在读取模型列表…' : '正在检查服务…', 'info', true);
     try {
       const discovered = await discoverCatalog();
       discoveredCapabilities = discovered.capabilities || {};
@@ -581,13 +584,11 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
         renderModels();
         result(`已读取 ${discovered.models.length} 个模型。点击候选项右侧的加号添加。`);
       } else {
-        toast(`服务连接正常，模型列表返回 ${discovered.models.length} 项。`);
+        result(`服务连接正常，模型列表返回 ${discovered.models.length} 项。`);
       }
     } catch (error) {
-      if (loadModels) result(error.message, false);
-      else toast(error.message);
+      result(error.message, 'danger');
     } finally {
-      $('check-api-service').textContent = '检查';
       busyState(false);
     }
   }
@@ -601,7 +602,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       exported = await api(`/api/config/connections/${editingId}/export-profile`, { method: 'POST' });
       for (const field of ['note', 'target', 'content', 'launch']) $(`export-profile-${field}`).textContent = exported[field];
       $('export-profile-dialog').showModal();
-    } catch (error) { toast(error.message); }
+    } catch (error) { toast(error.message, 'danger'); }
     finally { busyState(false); }
   });
   $('download-profile').addEventListener('click', () => {
@@ -615,7 +616,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && $('connection-more').open) { $('connection-more').open = false; $('connection-more').querySelector('summary').focus(); } });
   $('confirm-remove-connection').addEventListener('click', async () => {
     if (!pendingDelete) return;
-    try { config = await api(`/api/config/connections/${pendingDelete}`, { method: 'DELETE' }); pendingDelete = null; $('delete-connection-dialog').close(); populate(config.connections.find(c => c.id === config.default_connection_id), false); toast('连接已移除'); onSaved(config); } catch (error) { toast(error.message); }
+    try { config = await api(`/api/config/connections/${pendingDelete}`, { method: 'DELETE' }); pendingDelete = null; $('delete-connection-dialog').close(); populate(config.connections.find(c => c.id === config.default_connection_id), false); toast('连接已移除'); onSaved(config); } catch (error) { toast(error.message, 'danger'); }
   });
   return {
     async show() {
@@ -628,7 +629,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
         const hint = config.codex_home ? `文件位于 ${config.codex_home}，${example}` : example;
         profileInput.placeholder = hint;
         profileInput.title = hint;
-        $('settings-load-error').hidden = true;
+        toast('', 'info', { key: 'settings-load' });
         if (initialized && !editingId) {
           renderCards();
         } else {
@@ -637,11 +638,12 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
           populate(connection, editorOpen);
         }
       } catch (error) {
-        $('settings-load-error').textContent = error.message;
-        $('settings-load-error').hidden = false;
+        toast(error.message, 'danger', { key: 'settings-load', persistent: true });
       }
     },
     hide() {
+      toast('', 'info', { key: 'settings-load' });
+      result();
       selects.close();
       closeModelDialog();
       hideApiKey();

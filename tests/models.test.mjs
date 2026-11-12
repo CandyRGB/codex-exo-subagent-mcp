@@ -88,7 +88,17 @@ test('settings controller unifies models, preserves per-model drafts and tests o
     .replace('./dropdown.js', new URL('../web/dropdown.js', import.meta.url).href)
     .replace('./api-endpoint.js', new URL('../api-endpoint.mjs', import.meta.url).href);
   const { createModelSettings } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-  const settings = createModelSettings({ toast() {}, onSaved() { saved++; } }); await settings.show();
+  const messages = [];
+  const settings = createModelSettings({
+    toast(message, type, { key } = {}) { messages.push({ message, type, key }); },
+    onSaved() { saved++; },
+  });
+  const notice = (key, type) => {
+    const latest = messages.findLast(message => message.key === key);
+    assert.equal(latest?.type, type);
+    return latest.message;
+  };
+  await settings.show();
   const $ = id => document.getElementById(id);
   const action = label => $('model-rows').querySelectorAll('button').find(button => button.getAttribute('aria-label') === label);
   assert.equal($('connection-editor').hidden, true, 'The list starts fully collapsed');
@@ -105,7 +115,6 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal($('connection-endpoint-preview').textContent, '预览: http://127.0.0.1:1/v1/chat/completions');
   assert.equal($('stored-auth-field').hidden, false);
   assert.equal($('connection-api-key').required, false);
-  assert.ok(!$('settings-load-error').textContent, $('settings-load-error').textContent);
   assert.ok(document.querySelectorAll('header')[0].contains($('new-connection')), 'Add connection belongs to the top bar');
   assert.equal($('new-connection').hidden, false); settings.hide(); assert.equal($('new-connection').hidden, true); await settings.show();
   assert.equal($('connection-kind-field').hidden, true);
@@ -118,7 +127,7 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   await $('model-dialog-form').dispatch('submit');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 2, 'Viewing model settings is not an edit');
   $('connection-name').value = 'Changed connection name';
-  await $('test-connection').dispatch('click'); assert.equal(probes, 2); assert.match($('connection-test-result').textContent, /未保存/);
+  await $('test-connection').dispatch('click'); assert.equal(probes, 2); assert.match(notice('connection-operation', 'warning'), /未保存/);
   const radio = $('model-rows').querySelectorAll('input').find(input => input.getAttribute('aria-label') === '将 b 设为默认模型'); radio.checked = true; await radio.dispatch('change');
   await $('add-model').dispatch('click');
   $('model-id-input').value = 'c';
@@ -127,7 +136,7 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal($('model-effort-set').value, 'provider', 'The service scheme can be selected before discovery');
   assert.equal($('read-model-efforts').hidden, false);
   await $('read-model-efforts').dispatch('click');
-  assert.match($('model-dialog-result').textContent, /未返回该模型的档位/);
+  assert.match(notice('model-operation', 'warning'), /未返回该模型的档位/);
   $('model-effort-set').value = 'service';
   await $('model-effort-set').dispatch('change');
   $('model-context-window').value = '32768';
@@ -136,7 +145,7 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal(testedDraft.model, 'c');
   assert.deepEqual(testedDraft.input.model_limits.c, { context_window: 32768, max_output_tokens: 4096 });
   assert.deepEqual(testedDraft.input.model_reasoning.c, {}, 'Service defaults omit the inherited connection effort');
-  assert.equal($('model-dialog-result').textContent, 'DRAFT TEST');
+  assert.equal(notice('model-operation', 'info'), 'DRAFT TEST');
   assert.ok(!store.get(c.id).models.includes('c'));
   await $('model-dialog-form').dispatch('submit');
   await $('discover-models').dispatch('click'); await eventually(() => !$('save-connection').disabled);
@@ -144,7 +153,7 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   await $('model-effort-set-trigger').dispatch('click');
   await $('settings-select-menu').children.find(option => option.textContent === '服务声明').dispatch('click');
   await $('read-model-efforts').dispatch('click');
-  assert.match($('model-dialog-result').textContent, /已读取 2 个档位/);
+  assert.match(notice('model-operation', 'info'), /已读取 2 个档位/);
   assert.deepEqual($('model-reasoning').children.map(option => option.value), ['', 'low', 'max']);
   await $('model-reasoning-trigger').dispatch('click');
   await $('settings-select-menu').children.find(option => option.textContent === 'max').dispatch('click');
@@ -168,7 +177,7 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal(store.get(c.id).model_reasoning.b.thinking_format, 'thinking');
   assert.equal(store.get(c.id).model_reasoning.b.effort_set, 'deepseek');
   assert.deepEqual(store.get(c.id).model_reasoning.d, { effort_set: 'provider', reasoning_effort: 'max' });
-  await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 3); assert.match($('connection-test-result').textContent, /TEST b/);
+  await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 3); assert.match(notice('connection-operation', 'info'), /TEST b/);
   await action('删除模型 b').dispatch('click');
   await action('编辑模型 d').dispatch('click');
   assert.equal($('model-effort-set').value, 'provider');

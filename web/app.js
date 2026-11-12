@@ -16,12 +16,79 @@ async function json(path, options = {}) {
   if (!response.ok) { let message = '无法读取本机会话'; try { message = (await response.json()).error || message; } catch {} throw new Error(message); }
   return response.json();
 }
+let connectionError = '';
 function connection(ok, error = '') {
-  $('error-banner').hidden = ok;
-  if (!ok) $('error-banner').textContent = `${error}。请确认本地会话服务仍在运行。`;
+  const message = ok ? '' : `${error}。请确认本地会话服务仍在运行。`;
+  if (message === connectionError) return;
+  connectionError = message;
+  toast(message, 'danger', { key: 'local-service', persistent: true });
 }
-function toast(text) { $('toast').textContent = text; $('toast').hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => { $('toast').hidden = true; }, 2200); }
-async function copy(text) { try { await navigator.clipboard.writeText(text); toast('已复制'); } catch { toast('浏览器未允许复制，请手动选择文本'); } }
+const messageHost = $('page-messages');
+const messages = new Map();
+const messageTypes = {
+  info: { icon: 'info', label: '提示', duration: 3200 },
+  warning: { icon: 'warning', label: '警告', duration: 5500 },
+  danger: { icon: 'danger', label: '错误', duration: 6500 },
+};
+function positionMessages() {
+  const surface = [...document.querySelectorAll('dialog[open]')].at(-1) || document.body;
+  if (messageHost.parentElement !== surface) {
+    messageHost.hidePopover?.();
+    surface.append(messageHost);
+  }
+  messageHost.hidden = messages.size === 0;
+  if (messageHost.hidden) messageHost.hidePopover?.();
+  else if (messageHost.showPopover && !messageHost.matches(':popover-open')) messageHost.showPopover();
+}
+function dismissMessage(key) {
+  const message = messages.get(key);
+  if (!message) return;
+  clearTimeout(message.timer);
+  message.element.remove();
+  messages.delete(key);
+  positionMessages();
+}
+function toast(text, type = 'info', { key = text, persistent = false } = {}) {
+  if (!text) {
+    dismissMessage(key);
+    return;
+  }
+  const previous = messages.get(key);
+  if (persistent && previous?.persistent && previous.text === text && previous.type === type) return;
+  clearTimeout(previous?.timer);
+  previous?.element.remove();
+  const settings = messageTypes[type];
+  const element = node('div', `page-message page-message-${type}`);
+  const symbol = icon(settings.icon);
+  symbol.setAttribute('aria-hidden', 'true');
+  const content = node('span', 'page-message-text', text);
+  content.setAttribute('role', type === 'danger' ? 'alert' : 'status');
+  content.setAttribute('aria-label', settings.label);
+  const close = node('button', 'icon-button page-message-close');
+  close.type = 'button';
+  close.setAttribute('aria-label', '关闭消息');
+  close.append(icon('x'));
+  close.addEventListener('click', () => dismissMessage(key));
+  element.append(symbol, content, close);
+  messageHost.append(element);
+  const timer = persistent ? undefined : setTimeout(() => dismissMessage(key), settings.duration);
+  messages.set(key, { element, timer, text, type, persistent });
+  if (messages.size > 4) {
+    const oldest = [...messages].find(([id, message]) => id !== key && !message.persistent);
+    if (oldest) dismissMessage(oldest[0]);
+  }
+  positionMessages();
+}
+const dialogMessages = new MutationObserver(positionMessages);
+for (const dialog of document.querySelectorAll('dialog')) dialogMessages.observe(dialog, { attributeFilter: ['open'] });
+async function copy(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('已复制');
+  } catch {
+    toast('浏览器未允许复制，请手动选择文本', 'warning');
+  }
+}
 const modelSettings = createModelSettings({ toast, onSaved: () => { void refresh(); } });
 
 function inline(parent, text) {
@@ -145,7 +212,7 @@ function toolEntry(entry, opened) {
     copyButton.disabled = true;
     try {
       await copy(shell ? await completeCommandOutput(entry, readFull) : await readFull(entry.id));
-    } catch (error) { toast(error.message); }
+    } catch (error) { toast(error.message, 'danger'); }
     finally { copyButton.disabled = false; }
   });
   outputBox.append(copyButton, node('pre', 'tool-output-text', output || '暂无输出')); body.append(outputBox);
@@ -156,7 +223,7 @@ function toolEntry(entry, opened) {
       try {
         const text = await completeCommandOutput(entry, readFull); const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
         const link = node('a'); link.href = url; link.download = `command-${entry.id}.txt`; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-      } catch (error) { toast(error.message); }
+      } catch (error) { toast(error.message, 'danger'); }
     });
     body.append(full);
   }
@@ -221,7 +288,6 @@ async function loadList() {
       if (sessions.length) select(sessions[0].id);
     }
   }
-  connection(true);
 }
 async function loadDetail(initial = false) {
   if (!selectedId) return;
@@ -262,7 +328,15 @@ function fromHash() {
 }
 async function refresh() {
   if (busy) return; busy = true;
-  try { await loadList(); if (!loading && !settingsOpen) await loadDetail(); } catch (error) { connection(false, error.message); } finally { busy = false; }
+  try {
+    await loadList();
+    if (!loading && !settingsOpen) await loadDetail();
+    connection(true);
+  } catch (error) {
+    connection(false, error.message);
+  } finally {
+    busy = false;
+  }
 }
 
 $('search').addEventListener('input', renderNavigation);
@@ -282,16 +356,16 @@ $('load-earlier').addEventListener('click', async () => {
     const older = await json(`/api/sessions/${id}?before=${data.earlier_cursor}`); if (id !== selectedId) return;
     data.entries = [...older.entries, ...data.entries]; data.earlier_cursor = older.earlier_cursor;
     renderConversation(); requestAnimationFrame(() => { $('conversation-scroll').scrollTop = top + $('conversation-scroll').scrollHeight - beforeHeight; });
-  } catch (error) { toast(error.message); }
+  } catch (error) { toast(error.message, 'danger'); }
 });
 $('pin-button').addEventListener('click', async () => {
   if (!data) return;
-  try { await json(`/api/sessions/${selectedId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: !data.session.pinned }) }); etag = null; await refresh(); } catch (error) { toast(error.message); }
+  try { await json(`/api/sessions/${selectedId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: !data.session.pinned }) }); etag = null; await refresh(); } catch (error) { toast(error.message, 'danger'); }
 });
 $('rename-button').addEventListener('click', () => { if (data) { $('rename-input').value = data.session.title; $('rename-dialog').showModal(); $('rename-input').select(); } });
 $('rename-form').addEventListener('submit', async event => {
   event.preventDefault();
-  try { await json(`/api/sessions/${selectedId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: $('rename-input').value.trim() }) }); $('rename-dialog').close(); etag = null; await refresh(); toast('会话名称已更新'); } catch (error) { toast(error.message); }
+  try { await json(`/api/sessions/${selectedId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: $('rename-input').value.trim() }) }); $('rename-dialog').close(); etag = null; await refresh(); toast('会话名称已更新'); } catch (error) { toast(error.message, 'danger'); }
 });
 $('info-button').addEventListener('click', () => {
   if (!data) return;
@@ -302,6 +376,17 @@ $('info-button').addEventListener('click', () => {
   $('info-content').replaceChildren(fragment); $('info-dialog').showModal();
 });
 document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+let validatingForm = false;
+document.addEventListener('invalid', event => {
+  event.preventDefault();
+  if (validatingForm) return;
+  validatingForm = true;
+  const field = event.target;
+  const label = field.labels?.[0]?.textContent.trim();
+  toast(label ? `${label}：${field.validationMessage}` : field.validationMessage, 'warning', { key: 'form-validation' });
+  field.focus();
+  queueMicrotask(() => { validatingForm = false; });
+}, true);
 document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); if (innerWidth <= 760) $('app').classList.add('mobile-open'); $('search').focus(); } });
 window.addEventListener('hashchange', fromHash);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(); });
