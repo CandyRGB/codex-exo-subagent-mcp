@@ -6,9 +6,22 @@ import { createZstdDecompress } from 'node:zlib';
 
 const ID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const active = new Set(['running', 'cancelling']);
+const USAGE_KEYS = ['input_tokens', 'cached_input_tokens', 'cache_write_input_tokens', 'output_tokens', 'reasoning_output_tokens'];
 const plain = value => typeof value === 'string' ? value : JSON.stringify(value ?? '', null, 2);
 const metadataOf = p => ({ id: p.id, model_provider: p.model_provider, source: typeof p.source === 'string' ? p.source : 'subagent', cwd: p.cwd, timestamp: p.timestamp, model: p.model });
 export const projectName = path => path.split(/[\\/]/).filter(Boolean).at(-1) || path || '未分类';
+
+function combinedUsage(jobs = []) {
+  const reported = jobs.filter(job => job.usage?.status === 'reported');
+  if (!reported.length) return null;
+  const usage = { status: 'reported' };
+  for (const key of USAGE_KEYS) {
+    const total = reported.reduce((sum, job) => sum + (Number.isFinite(job.usage[key]) ? job.usage[key] : 0), 0);
+    if (total > 0 || key === 'input_tokens' || key === 'output_tokens') usage[key] = total;
+  }
+  if (reported.length < jobs.length) usage.partial = true;
+  return usage;
+}
 
 export function cleanUserText(text) {
   text = text.trim();
@@ -326,8 +339,7 @@ export class SessionRepository {
     }
     const start = full ? 0 : Math.max(0, end - limit);
     const selected = all.slice(start, full ? all.length : end);
-    const lastJob = item.jobs?.at(-1);
-    const usage = lastJob?.usage || (transcript.usage && Object.values(transcript.usage).some(n => typeof n === 'number' && n > 0) ? { status: 'reported', ...transcript.usage } : { status: 'unavailable' });
+    const usage = combinedUsage(item.jobs) || (transcript.usage && Object.values(transcript.usage).some(n => typeof n === 'number' && n > 0) ? { status: 'reported', ...transcript.usage } : { status: 'unavailable' });
     return {
       session: this.summary(item), entries: selected, total_entries: all.length,
       earlier_cursor: start > 0 ? start : null, usage,

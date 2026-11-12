@@ -152,7 +152,7 @@ The interface is Chinese-language and binds to loopback only. `CODEX_SUBAGENT_VI
 npm test
 ```
 
-50 checks run against a local fixture with no provider contact. They cover job lifecycle and termination, bounded results and pagination, usage reporting, persistence and resume, session locking, timeouts, concurrency, cancellation, disconnect cleanup, connection validation, encrypted credentials, profile editing and export, route fingerprinting, error message quality, per-model reasoning injection, and authentication plus streaming tool-call translation.
+52 checks run against a local fixture with no provider contact. They cover job lifecycle and termination, bounded results and pagination, usage reporting and per-session totals, persistence and resume, session locking, timeouts, concurrency, cancellation, disconnect cleanup, connection validation, encrypted credentials, profile editing and export, route fingerprinting, viewer identity checks, error message quality, per-model reasoning injection, and authentication plus streaming tool-call translation.
 
 ```powershell
 # Real Codex CLI against a deterministic local Chat Completions fixture:

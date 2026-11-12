@@ -373,7 +373,7 @@ $('rename-form').addEventListener('submit', async event => {
 $('info-button').addEventListener('click', () => {
   if (!data) return;
   const fragment = document.createDocumentFragment(); const s = data.session;
-  const rows = [['工作目录', s.cwd], ['模型与路由', [s.model, s.provider].filter(Boolean).join(' · ') || '未知'], ['创建时间', fullDate(s.created_at)], ['最后更新', fullDate(s.updated_at)], ['对话统计', `${s.user_turns ?? 0} 轮对话 · ${s.tool_calls ?? 0} 次工具执行`], ['Token 用量', data.usage.status === 'reported' ? `输入 ${(data.usage.input_tokens || 0).toLocaleString()} · 输出 ${(data.usage.output_tokens || 0).toLocaleString()}` : '上游未提供有效统计，暂不可用']];
+  const rows = [['工作目录', s.cwd], ['模型与路由', [s.model, s.provider].filter(Boolean).join(' · ') || '未知'], ['创建时间', fullDate(s.created_at)], ['最后更新', fullDate(s.updated_at)], ['对话统计', `${s.user_turns ?? 0} 轮对话 · ${s.tool_calls ?? 0} 次工具执行`], ['Token 用量', data.usage.status === 'reported' ? `输入 ${(data.usage.input_tokens || 0).toLocaleString()} · 输出 ${(data.usage.output_tokens || 0).toLocaleString()}${data.usage.partial ? '（部分任务未上报）' : ''}` : '上游未提供有效统计，暂不可用']];
   for (const [label, value] of rows) { const row = node('div', 'info-row'); row.append(node('span', '', label), node('div', '', value)); fragment.append(row); }
   const id = node('div', 'info-row'); id.append(node('span', '', '会话 ID'), node('div', '', s.id)); const button = node('button', 'info-copy', '复制会话 ID'); button.addEventListener('click', () => copy(s.id)); id.append(button); fragment.append(id);
   $('info-content').replaceChildren(fragment); $('info-dialog').showModal();

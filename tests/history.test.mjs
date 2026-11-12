@@ -114,6 +114,24 @@ test('viewer reuse requires the same version and Codex home', () => {
   assert.equal(viewerMatches({ ...health, codex_home: undefined }, { version: '4.0.0', codexHome: health.codex_home }), false);
 });
 
+test('session usage totals every job in the conversation and flags partial reporting', async () => {
+  const f = fixture(); const native = rollout(f);
+  const usage = [[10, 5], [20, 7], null];
+  for (const entry of usage) {
+    const id = randomUUID(); mkdirSync(join(f.stateDir, 'jobs', id));
+    writeFileSync(join(f.stateDir, 'jobs', id, 'job.json'), JSON.stringify({
+      job_id: id, session_id: native.id, model: 'custom', profile: 'route', cwd: 'E:\\Projects\\example',
+      started_at: at, finished_at: at, status: 'completed',
+      usage: entry ? { status: 'reported', input_tokens: entry[0], output_tokens: entry[1] } : { status: 'unavailable' },
+    }));
+  }
+  const detail = await new SessionRepository(f).get(native.id);
+  assert.equal(detail.usage.status, 'reported');
+  assert.equal(detail.usage.input_tokens, 30);
+  assert.equal(detail.usage.output_tokens, 12);
+  assert.equal(detail.usage.partial, true);
+});
+
 test('new jobs retain a viewable conversation even if native Codex history is unavailable', async t => {
   const f = fixture();
   const manager = new JobManager({ stateDir: f.stateDir, codexBin: process.execPath, codexArgs: [fileURLToPath(new URL('./fake-codex.mjs', import.meta.url))], env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0', CODEX_SUBAGENT_MODEL: '' } });
