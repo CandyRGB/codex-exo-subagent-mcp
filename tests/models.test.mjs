@@ -95,6 +95,7 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal($('connection-editor-home').contains($('connection-editor')), true);
   await $(`connection-toggle-${c.id}`).dispatch('click');
   assert.equal($(`connection-row-${c.id}`).contains($('connection-editor')), true);
+  assert.equal($(`connection-enable-${c.id}`).disabled, true);
   assert.equal($(`connection-toggle-${c.id}`).getAttribute('aria-expanded'), 'true');
   const initialName = $('connection-name').value; $('connection-name').value = 'Unsaved name';
   await $(`connection-toggle-${c.id}`).dispatch('click'); assert.equal($('connection-editor').hidden, true);
@@ -217,6 +218,14 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal($('connection-api-key').value, '', 'Closing an expanded editor clears the revealed key');
   await $(`connection-toggle-${created.id}`).dispatch('click');
   assert.equal($('connection-row-new'), undefined); assert.equal($(`connection-row-${created.id}`).contains($('connection-editor')), true);
+  await $(`connection-toggle-${created.id}`).dispatch('click');
+  await $(`connection-enable-${created.id}`).dispatch('click');
+  assert.equal($(`connection-toggle-${created.id}`).getAttribute('aria-expanded'), 'true');
+  assert.equal($(`connection-enable-${created.id}`).getAttribute('aria-checked'), 'false');
+  assert.equal(store.get(created.id).enabled, true);
+  await $('connection-form').dispatch('submit');
+  await eventually(() => saved === 4 && !$('save-connection').disabled);
+  assert.equal(store.get(created.id).enabled, false);
   await $('remove-connection').dispatch('click'); await $('confirm-remove-connection').dispatch('click');
   assert.equal(store.read().connections.some(connection => connection.id === created.id), false); assert.equal($('connection-editor').hidden, true);
   assert.equal($('connections-list').querySelectorAll('form').length, 0, 'The collapsed list contains no visible editor');
