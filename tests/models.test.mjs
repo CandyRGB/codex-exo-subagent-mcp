@@ -46,6 +46,9 @@ test('configuration starts empty and preserves explicitly configured connections
   assert.deepEqual(store.describe(), { default_connection_id: null, default_model: null, connections: [] });
   assert.throws(() => store.select({}), /尚未配置默认模型连接/);
   assert.equal(existsSync(store.path), false);
+  const withEnv = new ModelStore({ stateDir: fixture(), env: { CODEX_SUBAGENT_PROFILE: 'legacy-profile', CODEX_SUBAGENT_MODEL: 'legacy-model' } });
+  assert.throws(() => withEnv.select({}), /尚未配置默认模型连接/);
+  assert.equal(withEnv.select({ profile: 'legacy-profile' }).model, 'legacy-model');
   const c = save(store, { models: ['a', 'b'], default_model: 'b' });
   assert.equal(store.select({}).model, 'b');
   store.setDefault(c.id, 'a'); assert.equal(store.select({}).model, 'a');

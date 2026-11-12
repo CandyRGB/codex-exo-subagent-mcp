@@ -188,11 +188,7 @@ export class ModelStore {
     if (!parent && args.profile) return { connection: null, model: args.model || this.env.CODEX_SUBAGENT_MODEL || null, profile: args.profile };
     const config = this.read();
     const id = parent?.connection_id || args.connection_id || config.default_connection_id;
-    if (!id) {
-      const profile = this.env.CODEX_SUBAGENT_PROFILE;
-      if (profile) return { connection: null, model: args.model || this.env.CODEX_SUBAGENT_MODEL || null, profile };
-      fail('尚未配置默认模型连接。请在「模型与连接」中添加并启用连接。');
-    }
+    if (!id) fail('尚未配置默认模型连接。请在「模型与连接」中添加并启用连接。');
     const connection = this.get(id);
     if (!connection.enabled) throw new Error('所选模型连接已停用。');
     if (parent && (args.connection_id && args.connection_id !== parent.connection_id || parent.connection_fingerprint !== this.fingerprint(connection))) throw new Error('续聊连接的地址或认证方式已改变，请恢复原配置或新建任务。');

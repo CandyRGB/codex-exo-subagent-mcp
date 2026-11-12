@@ -159,7 +159,7 @@ npm test
 # real file write, shell command, session continuation and profile export
 npm run test:cli
 
-# Optional: set CODEX_SUBAGENT_PROFILE to a local profile before running two live turns
+# Optional: configure a default connection in the viewer before running two live turns
 npm run test:live
 ```
 
@@ -173,8 +173,7 @@ npm run test:live
 | `CODEX_SUBAGENT_MAX_CONCURRENT` | `2` per MCP process, maximum 16 |
 | `CODEX_SUBAGENT_MAX_OUTPUT_CHARS` | `4000` UTF-16 characters per page, 256–16000 |
 | `CODEX_SUBAGENT_CODEX_BIN` | Newest installed desktop Codex build on Windows, otherwise `codex` on `PATH` |
-| `CODEX_SUBAGENT_PROFILE` | Unset. Optional profile for calls without a saved default connection. |
-| `CODEX_SUBAGENT_MODEL` | Unset. Optional model override for direct profile calls. |
+| `CODEX_SUBAGENT_MODEL` | Unset. Optional model override when a call passes `profile` directly. |
 | `CODEX_SUBAGENT_MAX_DEPTH` | `2` |
 | `CODEX_HOME` | `~/.codex` |
 

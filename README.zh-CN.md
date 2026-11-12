@@ -159,7 +159,7 @@ npm test
 # 实际文件写入、shell 命令、会话续接与 profile 导出
 npm run test:cli
 
-# 可选：先用 CODEX_SUBAGENT_PROFILE 指定本机 profile，再执行两轮真实调用
+# 可选：先在页面配置好默认连接，再执行两轮真实调用
 npm run test:live
 ```
 
@@ -173,8 +173,7 @@ npm run test:live
 | `CODEX_SUBAGENT_MAX_CONCURRENT` | 每个 MCP 进程 `2`，上限 16 |
 | `CODEX_SUBAGENT_MAX_OUTPUT_CHARS` | 每页 `4000` 个 UTF-16 字符，可设 256–16000 |
 | `CODEX_SUBAGENT_CODEX_BIN` | Windows 上取最新安装的桌面端 Codex，否则使用 `PATH` 中的 `codex` |
-| `CODEX_SUBAGENT_PROFILE` | 默认未设置。没有已保存的默认连接时，可用它指定 profile。 |
-| `CODEX_SUBAGENT_MODEL` | 默认未设置。直接调用 profile 时，可用它指定模型。 |
+| `CODEX_SUBAGENT_MODEL` | 默认未设置。调用方直接传 `profile` 时，可用它指定模型。 |
 | `CODEX_SUBAGENT_MAX_DEPTH` | `2` |
 | `CODEX_HOME` | `~/.codex` |
 

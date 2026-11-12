@@ -17,9 +17,12 @@ function directory() {
   return path;
 }
 function manager(t, overrides = {}) {
+  const stateDir = overrides.stateDir || directory();
+  const store = new ModelStore({ stateDir, env: {} });
+  if (!store.read().connections.length) store.save({ name: 'Fixture profile', kind: 'profile', profile: 'test-profile', models: ['test-model'] });
   const instance = new JobManager({
-    codexBin: process.execPath, codexArgs: [fakeCodex], stateDir: directory(),
-    env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0', CODEX_SUBAGENT_MAX_CONCURRENT: '2', CODEX_SUBAGENT_PROFILE: 'test-profile', CODEX_SUBAGENT_MODEL: 'test-model' },
+    codexBin: process.execPath, codexArgs: [fakeCodex], stateDir,
+    env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0', CODEX_SUBAGENT_MAX_CONCURRENT: '2', CODEX_SUBAGENT_MODEL: 'test-model' },
     ...overrides,
   });
   t.after(() => instance.shutdown());

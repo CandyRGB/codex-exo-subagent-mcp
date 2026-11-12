@@ -85,8 +85,7 @@ For `run` or `start`, omit `connection_id` and `model` to use website defaults, 
 
 | Environment variable | Default |
 | --- | --- |
-| `CODEX_SUBAGENT_PROFILE` | Unset. Optional profile for calls without a saved default connection. |
-| `CODEX_SUBAGENT_MODEL` | Unset. Optional model override for direct profile calls. |
+| `CODEX_SUBAGENT_MODEL` | Unset. Optional model override when a call passes `profile` directly. |
 | `CODEX_SUBAGENT_MAX_CONCURRENT` | `2` (per MCP process, maximum 16) |
 | `CODEX_SUBAGENT_MAX_OUTPUT_CHARS` | `4000` |
 | `CODEX_SUBAGENT_STATE_DIR` | `state` next to the entry point |
