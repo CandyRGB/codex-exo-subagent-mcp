@@ -215,7 +215,10 @@ function toolEntry(entry, opened) {
     } catch (error) { toast(error.message, 'danger'); }
     finally { copyButton.disabled = false; }
   });
-  outputBox.append(copyButton, node('pre', 'tool-output-text', output || '暂无输出')); body.append(outputBox);
+  const actions = node('div', 'tool-output-actions');
+  actions.append(copyButton);
+  outputBox.append(actions, node('pre', 'tool-output-text', output || '暂无输出'));
+  body.append(outputBox);
   if (entry.output_truncated) {
     const full = node('a', 'tool-copy', '输出较长，下载完整输出'); full.href = outputPath;
     if (entry.output_parts?.length > 1) full.addEventListener('click', async event => {
