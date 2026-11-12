@@ -382,9 +382,10 @@ document.addEventListener('invalid', event => {
   if (validatingForm) return;
   validatingForm = true;
   const field = event.target;
-  const label = field.labels?.[0]?.textContent.trim();
+  const trigger = $(`${field.id}-trigger`);
+  const label = (field.labels?.[0] || $(`${field.id}-label`))?.textContent.trim();
   toast(label ? `${label}：${field.validationMessage}` : field.validationMessage, 'warning', { key: 'form-validation' });
-  field.focus();
+  (trigger || field).focus();
   queueMicrotask(() => { validatingForm = false; });
 }, true);
 document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); if (innerWidth <= 760) $('app').classList.add('mobile-open'); $('search').focus(); } });

@@ -9,6 +9,7 @@ import { SessionRepository } from './history.mjs';
 import { ModelStore, safeError } from './model-store.mjs';
 import { ModelGateway, readJSON } from './model-gateway.mjs';
 import { exportProfile } from './profile-export.mjs';
+import { getProfile, listProfiles, profileRequestLimit, saveProfile } from './profile-files.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_PORT = 43187;
@@ -44,6 +45,27 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
       if (url.pathname === '/api/config' && request.method === 'GET') {
         send(200, { ...store.publicConfig(), codex_home: repository.codexHome });
         return;
+      }
+      const profileRoute = url.pathname.match(/^\/api\/config\/profiles(?:\/([A-Za-z0-9_-]{1,80}))?$/);
+      if (profileRoute && ['GET', 'PUT'].includes(request.method)) {
+        const fetchSite = request.headers['sec-fetch-site'];
+        if ((origin && origin !== `http://${request.headers.host}`) || (fetchSite && fetchSite !== 'same-origin')) {
+          send(403, { error: '只能在本机设置页面管理 Codex profile。' });
+          return;
+        }
+        const name = profileRoute[1];
+        if (request.method === 'GET') {
+          send(200, name ? getProfile(repository.codexHome, name) : { profiles: listProfiles(repository.codexHome) });
+          return;
+        }
+        if (name) {
+          if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')) {
+            send(415, { error: 'Expected JSON' });
+            return;
+          }
+          send(200, saveProfile(repository.codexHome, name, await readJSON(request, profileRequestLimit)));
+          return;
+        }
       }
       if (request.method === 'GET' && ['/reasoning.js', '/api-endpoint.js'].includes(url.pathname)) {
         const moduleFile = url.pathname.slice(1, -3) + '.mjs';

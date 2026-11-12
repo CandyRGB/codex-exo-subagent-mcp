@@ -17,6 +17,10 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   const apiKeyInput = $('connection-api-key');
   const apiKeyToggle = $('show-api-key');
   const modelDialog = $('model-dialog');
+  const profileSelect = $('connection-profile');
+  const profileContent = $('profile-content');
+  const profileDrafts = new Map();
+  let profileNames = [], profileRead = null, profileFile = null;
   let modelRequest = null;
   const modelsOf = () => selection.models;
   async function api(path, options = {}) {
@@ -24,6 +28,106 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     const data = await r.json(); if (!r.ok) throw new Error(data.error || '模型配置操作失败'); return data;
   }
   const payload = value => ({ headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+  function setProfileChoices(name, listed = false) {
+    const placeholder = el('option', '', listed && !profileNames.length ? '未找到本机 profile' : '选择本机 profile');
+    placeholder.value = '';
+    const options = profileNames.map(value => {
+      const option = el('option', '', value);
+      option.value = value;
+      return option;
+    });
+    if (name && !profileNames.includes(name)) {
+      const previous = el('option', '', listed ? `${name}（未找到文件）` : name);
+      previous.value = name;
+      options.push(previous);
+    }
+    profileSelect.replaceChildren(placeholder, ...options);
+    profileSelect.value = name;
+    selects.refresh();
+  }
+  function syncProfileControls() {
+    profileSelect.disabled = busy || $('connection-kind').value !== 'profile';
+    $('reload-profile').disabled = busy || Boolean(profileRead);
+    profileContent.disabled = !profileFile;
+    profileContent.readOnly = busy;
+    $('save-profile').disabled = busy || !profileFile || profileContent.value === profileFile.original;
+  }
+  function clearProfileEditor() {
+    profileRead?.abort();
+    profileRead = null;
+    profileFile = null;
+    profileContent.value = '';
+    $('profile-editor').hidden = true;
+    toast('', 'info', { key: 'profile-read' });
+    syncProfileControls();
+  }
+  async function loadProfileEditor({ refreshList = false, discardDraft = false } = {}) {
+    clearProfileEditor();
+    if (!editorOpen || $('settings-page').hidden || $('connection-kind').value !== 'profile') return;
+    const name = profileSelect.value;
+    if (name) {
+      $('profile-filename').textContent = `${name}.config.toml`;
+      $('profile-editor').hidden = false;
+    }
+    const request = new AbortController();
+    profileRead = request;
+    syncProfileControls();
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10000)]);
+    try {
+      if (refreshList) {
+        const list = await api('/api/config/profiles', { signal });
+        if (profileRead !== request) return;
+        profileNames = list.profiles;
+        setProfileChoices(name, true);
+      }
+      if (!name) return;
+      const draft = discardDraft ? null : profileDrafts.get(name);
+      if (draft) {
+        profileFile = draft.file;
+        profileContent.value = draft.content;
+        return;
+      }
+      const file = await api(`/api/config/profiles/${encodeURIComponent(name)}`, { signal });
+      if (profileRead !== request) return;
+      profileDrafts.delete(name);
+      profileContent.value = file.content;
+      profileFile = { name, revision: file.revision, original: profileContent.value };
+    } catch (error) {
+      if (profileRead !== request) return;
+      const draft = profileDrafts.get(name);
+      if (draft) {
+        profileFile = draft.file;
+        profileContent.value = draft.content;
+      }
+      toast(error.message, 'danger', { key: 'profile-read' });
+    } finally {
+      if (profileRead === request) {
+        profileRead = null;
+        syncProfileControls();
+      }
+    }
+  }
+  async function saveProfileFile() {
+    if (busy || !profileFile || profileContent.value === profileFile.original) return;
+    const file = profileFile;
+    busyState(true);
+    try {
+      const saved = await api(`/api/config/profiles/${encodeURIComponent(file.name)}`, {
+        method: 'PUT',
+        ...payload({ content: profileContent.value, revision: file.revision }),
+      });
+      profileDrafts.delete(file.name);
+      if (profileFile === file) {
+        profileContent.value = saved.content;
+        profileFile = { name: file.name, revision: saved.revision, original: profileContent.value };
+      }
+      toast('profile 文件已保存', 'info', { key: 'profile-save' });
+    } catch (error) {
+      toast(error.message, 'danger', { key: 'profile-save' });
+    } finally {
+      busyState(false);
+    }
+  }
   function setApiKeyVisible(visible) {
     apiKeyInput.type = visible ? 'text' : 'password';
     const label = visible ? '隐藏 API Key' : '显示 API Key';
@@ -82,6 +186,8 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     for (const id of ['save-connection', 'test-connection', 'discover-models', 'new-connection', 'export-connection', 'add-model', 'check-api-service']) $(id).disabled = value;
     $('test-connection').disabled = value || !editingId;
     $('save-connection').textContent = value ? '正在处理…' : '保存连接';
+    syncProfileControls();
+    selects.refresh();
   }
   function modelAction(iconName, label, handler, destructive = false) {
     const button = el('button', `icon-button model-action${destructive ? ' model-action-delete' : ''}`);
@@ -329,8 +435,8 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     const envKey = usesEnvironmentKey(existing);
     $('endpoint-fields').hidden = profile; $('profile-fields').hidden = !profile;
     $('connection-base-url').required = !profile;
-    $('connection-profile').required = profile;
-    $('connection-profile').disabled = !profile;
+    profileSelect.required = profile;
+    syncProfileControls();
     for (const field of $('endpoint-fields').querySelectorAll('input, select')) field.disabled = profile;
     $('stored-auth-field').hidden = envKey;
     $('env-auth-field').hidden = !envKey;
@@ -396,7 +502,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     apiKeyInput.placeholder = connection?.has_api_key ? '········' : '可留空';
     $('connection-env-var').value = connection?.api_key_env || '';
     selection = new ModelSelection(connection || {});
-    $('connection-profile').value = connection?.profile || '';
+    setProfileChoices(connection?.profile || '');
     $('export-connection').hidden = !connection || connection.kind === 'profile';
     $('export-connection').title = '导出已保存的配置；未保存的修改不包含在内';
     $('remove-connection').hidden = !connection;
@@ -405,6 +511,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('remove-connection').title = connection?.id === config?.default_connection_id ? '先选择另一个默认连接，才能移除此连接' : '移除模型连接';
     $('test-connection').disabled = !connection;
     result(); syncFields(); renderCards(); savedSignature = signature();
+    void loadProfileEditor({ refreshList: true });
   }
   function renderCards() {
     if (!config) return;
@@ -487,8 +594,11 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       toggle.addEventListener('click', () => {
         if (busy) return;
         selects.close();
-        if (editingId === (connection?.id || null)) { editorOpen = !editorOpen; renderCards(); }
-        else populate(connection);
+        if (editingId === (connection?.id || null)) {
+          editorOpen = !editorOpen;
+          renderCards();
+          void loadProfileEditor({ refreshList: true });
+        } else populate(connection);
         ($(`connection-toggle-${id}`) || $('new-connection')).focus();
       });
       actions.append(toggle); heading.append(actions); card.append(heading);
@@ -561,7 +671,23 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   $('connection-protocol').addEventListener('input', () => previewEndpoint());
   $('connection-base-url').addEventListener('input', () => previewEndpoint());
   $('connection-base-url').addEventListener('blur', () => previewEndpoint(true));
-  $('connection-kind').addEventListener('change', syncFields);
+  $('connection-kind').addEventListener('change', () => {
+    syncFields();
+    void loadProfileEditor({ refreshList: true });
+  });
+  profileSelect.addEventListener('change', () => loadProfileEditor());
+  profileContent.addEventListener('input', () => {
+    if (!profileFile) return;
+    if (profileContent.value === profileFile.original) profileDrafts.delete(profileFile.name);
+    else profileDrafts.set(profileFile.name, { file: profileFile, content: profileContent.value });
+    syncProfileControls();
+  });
+  $('reload-profile').addEventListener('click', () => {
+    if (!profileDrafts.has(profileSelect.value) || window.confirm('重新读取会丢弃该文件的未保存修改。继续？')) {
+      return loadProfileEditor({ refreshList: true, discardDraft: true });
+    }
+  });
+  $('save-profile').addEventListener('click', saveProfileFile);
   apiKeyToggle.addEventListener('click', toggleApiKey);
   function discoverCatalog(signal) {
     const input = draft();
@@ -624,14 +750,10 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       $('new-connection').hidden = false;
       try {
         config = await api('/api/config');
-        const profileInput = $('connection-profile');
-        const example = '例如 deepseek.config.toml 填写 deepseek';
-        const hint = config.codex_home ? `文件位于 ${config.codex_home}，${example}` : example;
-        profileInput.placeholder = hint;
-        profileInput.title = hint;
         toast('', 'info', { key: 'settings-load' });
         if (initialized && !editingId) {
           renderCards();
+          void loadProfileEditor({ refreshList: true });
         } else {
           const connection = config.connections.find(c => c.id === editingId)
             || config.connections.find(c => c.id === config.default_connection_id);
@@ -647,6 +769,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       selects.close();
       closeModelDialog();
       hideApiKey();
+      clearProfileEditor();
       $('settings-page').hidden = true;
       $('new-connection').hidden = true;
     },

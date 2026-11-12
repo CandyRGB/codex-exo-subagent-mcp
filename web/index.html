@@ -51,7 +51,10 @@
         <div id="connection-kind-field" class="settings-field"><label for="connection-kind">接入方式</label><select id="connection-kind"><option value="api" selected>模型 API 连接</option><option value="profile">已有 Codex profile</option></select></div>
         <div class="connection-primary-grid">
           <div class="settings-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="80" required placeholder="例如：我的本地 Qwen / 公司模型路由"></div>
-          <div id="profile-fields" class="settings-field" hidden><label for="connection-profile">profile 名称</label><input id="connection-profile" pattern="[A-Za-z0-9_-]{1,80}" maxlength="80" placeholder="例如 deepseek.config.toml 填写 deepseek" autocomplete="off"></div>
+          <div id="profile-fields" class="settings-field" hidden>
+            <label for="connection-profile">Codex profile</label>
+            <select id="connection-profile"><option value="">选择本机 profile</option></select>
+          </div>
           <div id="endpoint-fields" class="connection-endpoint-fields">
             <div class="settings-field">
               <label for="connection-protocol">接口协议</label>
@@ -76,6 +79,16 @@
             </div>
             <div id="env-auth-field" class="settings-field" hidden><label for="connection-env-var">环境变量名称</label><input id="connection-env-var" placeholder="MY_MODEL_API_KEY" autocomplete="off"><details class="field-help"><summary>环境变量说明</summary><p>填写名称，勿填写密钥内容。环境变量需对本地服务进程可见。</p></details></div>
           </div>
+        </div>
+        <div id="profile-editor" class="settings-field profile-editor" hidden>
+          <div class="field-heading">
+            <label id="profile-filename" for="profile-content">profile 文件</label>
+            <div class="model-list-actions">
+              <button id="reload-profile" type="button" class="secondary-button model-list-action">重新读取</button>
+              <button id="save-profile" type="button" class="secondary-button model-list-action" disabled>保存文件</button>
+            </div>
+          </div>
+          <textarea id="profile-content" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off" disabled></textarea>
         </div>
         <div class="settings-field"><div class="field-heading"><span class="model-list-label">模型</span><div class="model-list-actions">
           <button id="add-model" type="button" class="secondary-button model-list-action"><svg aria-hidden="true"><use href="#i-plus"/></svg>添加</button>

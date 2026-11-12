@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ModelStore, WindowsSecretCodec } from '../model-store.mjs';
@@ -66,6 +66,11 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   });
   store.setDefault(c.id, 'a');
   const v = await viewer(t, store); let probes = 0, saved = 0;
+  const codexHome = v.repository.codexHome;
+  mkdirSync(codexHome, { recursive: true });
+  const profilePath = join(codexHome, 'workbuddy.config.toml');
+  writeFileSync(profilePath, 'model = "original"\n');
+  writeFileSync(join(codexHome, 'alternate.config.toml'), 'model = "alternate"\n');
   v.gateway.probe = async (id, model) => { probes++; return { ok: true, tool_calling: true, message: `TEST ${model}` }; };
   let checkedInput;
   let testedDraft;
@@ -194,7 +199,22 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   const profile = store.publicConfig().connections.find(connection => connection.kind === 'profile');
   await $(`connection-toggle-${profile.id}`).dispatch('click');
   assert.equal($('connection-kind-field').hidden, true);
-  assert.equal($('connection-profile').placeholder, `文件位于 ${join(store.stateDir, 'codex')}，例如 deepseek.config.toml 填写 deepseek`);
+  await eventually(() => !$('profile-content').disabled);
+  assert.deepEqual($('connection-profile').children.map(option => option.value), ['', 'alternate', 'workbuddy']);
+  assert.equal($('connection-profile').value, 'workbuddy');
+  assert.equal($('profile-content').value, 'model = "original"\n');
+  $('profile-content').value = 'model = "edited"\n';
+  await $('profile-content').dispatch('input');
+  $('connection-profile').value = 'alternate';
+  await $('connection-profile').dispatch('change');
+  assert.equal($('profile-content').value, 'model = "alternate"\n');
+  $('connection-profile').value = 'workbuddy';
+  await $('connection-profile').dispatch('change');
+  assert.equal($('profile-content').value, 'model = "edited"\n');
+  assert.equal(readFileSync(profilePath, 'utf8'), 'model = "original"\n');
+  await $('save-profile').dispatch('click');
+  assert.equal(readFileSync(profilePath, 'utf8'), 'model = "edited"\n');
+  assert.equal(saved, 2, 'Saving a profile file is independent of saving the connection');
   assert.equal($('connection-kind-value').textContent, '已有 Codex profile');
   assert.equal($('connection-protocol-trigger').disabled, true);
   assert.equal($(`connection-toggle-${c.id}`).getAttribute('aria-expanded'), 'false');
@@ -261,6 +281,34 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal(store.read().connections.some(connection => connection.id === created.id), false); assert.equal($('connection-editor').hidden, true);
   assert.equal($('connections-list').querySelectorAll('form').length, 0, 'The collapsed list contains no visible editor');
   assert.equal(document.querySelectorAll('form').filter(form => form.id === 'connection-form').length, 1, 'Moving the form never duplicates its controls');
+});
+
+test('profile editing stays within Codex home and refuses to overwrite a newer file', async t => {
+  const v = await viewer(t, new ModelStore({ stateDir: fixture() }));
+  const codexHome = v.repository.codexHome;
+  mkdirSync(codexHome, { recursive: true });
+  const path = join(codexHome, 'demo.config.toml');
+  writeFileSync(path, '# Original\r\nmodel = "demo"\r\n');
+  writeFileSync(join(codexHome, 'config.toml'), 'model = "default"\n');
+  const root = v.url + '/api/config/profiles';
+  const route = root + '/demo';
+  assert.deepEqual(await (await fetch(root)).json(), { profiles: ['demo'] });
+  const { content, revision } = await (await fetch(route)).json();
+  assert.equal(content, '# Original\r\nmodel = "demo"\r\n');
+  const update = (url, headers = {}) => fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ revision, content: '# Edit\nmodel = "demo"\n' }),
+  });
+  assert.equal((await fetch(route, { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+  assert.equal((await update(route, { Origin: 'https://example.com' })).status, 403);
+  assert.equal((await update(route, { 'Content-Type': 'text/plain' })).status, 415);
+  assert.equal((await update(root + '/..%2fconfig')).status, 404);
+  assert.equal((await update(root + '/missing')).status, 404);
+  assert.equal((await update(route)).status, 200);
+  assert.equal(readFileSync(path, 'utf8'), '# Edit\r\nmodel = "demo"\r\n');
+  assert.equal((await update(route)).status, 409);
+  assert.equal(readFileSync(join(codexHome, 'config.toml'), 'utf8'), 'model = "default"\n');
 });
 
 test('select menus commit native values, skip disabled choices, cancel and stay within the viewport', async () => {

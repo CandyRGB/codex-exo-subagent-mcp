@@ -224,7 +224,9 @@ test('installed entry point starts through a Windows junction or directory symli
   mkdirSync(actual);
   copyFileSync(fileURLToPath(new URL('../server.mjs', import.meta.url)), join(actual, 'server.mjs'));
   copyFileSync(fileURLToPath(new URL('../runtime.mjs', import.meta.url)), join(actual, 'runtime.mjs'));
-  for (const file of ['viewer-client.mjs', 'viewer.mjs', 'history.mjs', 'model-store.mjs', 'model-gateway.mjs', 'model-config.mjs', 'profile-export.mjs', 'reasoning.mjs', 'api-endpoint.mjs']) copyFileSync(fileURLToPath(new URL(`../${file}`, import.meta.url)), join(actual, file));
+  for (const file of ['viewer-client.mjs', 'viewer.mjs', 'history.mjs', 'model-store.mjs', 'model-gateway.mjs', 'model-config.mjs', 'profile-export.mjs', 'profile-files.mjs', 'reasoning.mjs', 'api-endpoint.mjs']) {
+    copyFileSync(fileURLToPath(new URL(`../${file}`, import.meta.url)), join(actual, file));
+  }
   symlinkSync(actual, alias, process.platform === 'win32' ? 'junction' : 'dir');
   const child = spawn(process.execPath, [join(alias, 'server.mjs')], {
     env: { ...process.env, CODEX_SUBAGENT_STATE_DIR: join(root, 'state'), CODEX_SUBAGENT_VIEWER_ENABLED: 'false' },
