@@ -135,7 +135,7 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
         const body = JSON.stringify(data);
         const etag = '"' + createHash('sha256').update(body).digest('hex').slice(0, 20) + '"';
         if (!full && request.headers['if-none-match'] === etag) { response.writeHead(304, headers); response.end(); return; }
-        if (full) send(200, data, undefined, { 'Content-Disposition': `attachment; filename="deepseek-session-${data.session.id}.json"` });
+        if (full) send(200, data, undefined, { 'Content-Disposition': `attachment; filename="subagent-session-${data.session.id}.json"` });
         else send(200, data, undefined, { ETag: etag });
         return;
       }
@@ -168,7 +168,7 @@ if (process.argv[1] && pathToFileURL(realpathSync(resolve(process.argv[1]))).hre
   const viewer = await createViewer({ stateDir, port, codexHome: arg('--codex-home') || process.env.CODEX_HOME || join(homedir(), '.codex') });
   mkdirSync(join(stateDir, 'viewer'), { recursive: true });
   writeFileSync(join(stateDir, 'viewer', 'service.json'), JSON.stringify({ pid: process.pid, url: viewer.url, state_id: stateIdentity(stateDir), started_at: new Date().toISOString() }));
-  console.log(`DeepSeek session viewer: ${viewer.url}`);
+  console.log(`codex-exo-subagent viewer: ${viewer.url}`);
   process.once('SIGTERM', () => { void viewer.close(); });
   process.once('SIGINT', () => { void viewer.close(); });
 }

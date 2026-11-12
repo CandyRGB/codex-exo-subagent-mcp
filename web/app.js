@@ -267,7 +267,7 @@ function renderConversation(toBottom = false) {
   const previouslyGrouped = new Set([...$('transcript').querySelectorAll('details.command-group')].flatMap(element => element.dataset.members.split(' ')));
   const fragment = document.createDocumentFragment();
   for (const entry of groupCommandRuns(coalesceTerminalEntries(data.entries))) fragment.append(entry.kind === 'command_group' ? commandGroup(entry, opened, previouslyGrouped) : entry.kind === 'tool' ? toolEntry(entry, opened) : messageEntry(entry));
-  if (!data.entries.length) fragment.append(node('p', 'empty-nav', isActive(session.status) ? 'DeepSeek 已接收任务，正在等待第一条记录…' : '此会话暂未找到消息记录。'));
+  if (!data.entries.length) fragment.append(node('p', 'empty-nav', isActive(session.status) ? '子代理已接收任务，正在等待第一条记录…' : '此会话暂未找到消息记录。'));
   $('transcript').replaceChildren(fragment);
   document.title = `${session.title} · codex-exo-subagent`;
   requestAnimationFrame(() => { scroll.scrollTop = toBottom || nearBottom ? scroll.scrollHeight : previousTop; checkScroll(); });
