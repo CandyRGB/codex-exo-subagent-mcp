@@ -141,6 +141,16 @@ export class ModelStore {
     connection.default_model = model; config.default_connection_id = id; writeJSON(this.path, config);
     return this.publicConfig();
   }
+  setEnabled(id, enabled) {
+    if (typeof enabled !== 'boolean') fail('连接状态必须是布尔值。');
+    const config = this.read();
+    const connection = config.connections.find(item => item.id === id);
+    if (!connection) throw Object.assign(new Error('模型连接不存在，请重新选择。'), { status: 404 });
+    if (!enabled && config.default_connection_id === id) fail('请先切换默认连接，再停用当前默认连接。');
+    connection.enabled = enabled;
+    writeJSON(this.path, config);
+    return this.publicConfig();
+  }
   remove(id) {
     const config = this.read(); this.get(id);
     if (config.default_connection_id === id) fail('请先选择另一个默认连接，再移除此连接。');

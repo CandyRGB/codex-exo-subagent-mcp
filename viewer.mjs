@@ -62,6 +62,11 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
       if (connectionRoute) {
         const id = connectionRoute[1];
         if (request.method === 'PUT' && !connectionRoute[2]) { send(200, store.save(await readJSON(request), id)); return; }
+        if (request.method === 'PATCH' && !connectionRoute[2]) {
+          const body = await readJSON(request, 4096);
+          send(200, store.setEnabled(id, body?.enabled));
+          return;
+        }
         if (request.method === 'DELETE' && !connectionRoute[2]) { send(200, store.remove(id)); return; }
         if (request.method === 'POST' && connectionRoute[2] === '/reveal-key') {
           const fetchSite = request.headers['sec-fetch-site'];

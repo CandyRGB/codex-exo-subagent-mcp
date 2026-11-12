@@ -10,7 +10,6 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   const selects = createSelectMenus(document);
   let config = null, editingId = null, pendingDelete = null, busy = false, exported = null;
   let editorOpen = false, initialized = false;
-  let connectionEnabled = true;
   let discoveredCapabilities = {}, editingModel = null;
   let selection = new ModelSelection(), discoveredModels = [], savedSignature = '';
   let revealedSavedKey = null;
@@ -337,11 +336,12 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       thinking_format: existing?.thinking_format,
       thinking_mode: existing?.thinking_mode,
       thinking_budget: existing?.thinking_budget,
-      enabled: connectionEnabled,
+      enabled: existing?.enabled !== false,
     };
   }
   function signature() {
     const input = draft(); const normalized = normalizeReasoning(input);
+    delete input.enabled;
     for (const field of ['reasoning_effort', 'thinking_format', 'thinking_mode', 'thinking_budget']) delete input[field];
     input.model_reasoning = Object.fromEntries(Object.entries(input.model_reasoning).sort(([a], [b]) => a.localeCompare(b)).map(([model, settings]) => [model, normalizeReasoning(settings)]));
     return JSON.stringify({ ...input, ...normalized });
@@ -363,7 +363,6 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     apiKeyInput.placeholder = connection?.has_api_key ? '········' : '可留空';
     $('connection-env-var').value = connection?.api_key_env || '';
     selection = new ModelSelection(connection || {});
-    connectionEnabled = connection?.enabled !== false;
     $('connection-profile').value = connection?.profile || '';
     $('export-connection').hidden = !connection || connection.kind === 'profile';
     $('export-connection').title = '导出已保存的配置；未保存的修改不包含在内';
@@ -386,7 +385,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       const id = connection?.id || 'new', name = connection?.name || '新连接';
       const current = editingId === (connection?.id || null);
       const expanded = editorOpen && current;
-      const enabled = current ? connectionEnabled : connection?.enabled !== false;
+      const enabled = connection?.enabled !== false;
       const isDefault = connection?.id === config.default_connection_id;
       const card = el('article', `connection-card${expanded ? ' selected' : ''}`); card.id = `connection-row-${id}`;
       const heading = el('div', 'connection-row'), info = el('div', 'connection-row-info');
@@ -402,29 +401,52 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       if (isDefault) heading.append(el('span', 'default-badge', '默认'));
       const actions = el('div', 'connection-row-actions');
       if (connection && !isDefault) {
-        const button = el('button', 'set-default-button', '设为默认连接'); button.type = 'button'; button.disabled = !connection.enabled || !enabled;
+        const button = el('button', 'set-default-button', '设为默认连接'); button.type = 'button'; button.disabled = !enabled;
         button.addEventListener('click', async () => {
           if (busy) return;
-          try { config = await api('/api/config/default', { method: 'PATCH', ...payload({ connection_id: connection.id, model: connection.default_model }) }); renderCards(); toast('新任务将使用所选连接'); onSaved(config); } catch (error) { toast(error.message); }
+          busyState(true);
+          try {
+            config = await api('/api/config/default', { method: 'PATCH', ...payload({ connection_id: connection.id, model: connection.default_model }) });
+            renderCards();
+            toast('新任务将使用所选连接');
+            onSaved(config);
+          } catch (error) {
+            toast(error.message);
+          } finally {
+            busyState(false);
+          }
         }); actions.append(button);
       }
-      const enableSwitch = el('button', 'connection-enable-switch');
-      enableSwitch.id = `connection-enable-${id}`;
-      enableSwitch.type = 'button';
-      enableSwitch.setAttribute('role', 'switch');
-      enableSwitch.setAttribute('aria-label', `启用 ${name}`);
-      enableSwitch.setAttribute('aria-checked', String(enabled));
-      enableSwitch.disabled = isDefault && enabled;
-      enableSwitch.title = enableSwitch.disabled ? '请先切换默认连接' : enabled ? '停用连接' : '启用连接';
-      enableSwitch.addEventListener('click', () => {
-        if (busy || enableSwitch.disabled) return;
-        if (!current) populate(connection);
-        editorOpen = true;
-        connectionEnabled = !enabled;
-        renderCards();
-        $(`connection-enable-${id}`).focus();
-      });
-      actions.append(enableSwitch);
+      if (connection) {
+        const enableSwitch = el('button', 'connection-enable-switch');
+        enableSwitch.id = `connection-enable-${id}`;
+        enableSwitch.type = 'button';
+        enableSwitch.setAttribute('role', 'switch');
+        enableSwitch.setAttribute('aria-label', `启用 ${name}`);
+        enableSwitch.setAttribute('aria-checked', String(enabled));
+        enableSwitch.disabled = isDefault && enabled;
+        enableSwitch.title = enableSwitch.disabled ? '请先切换默认连接' : enabled ? '停用连接' : '启用连接';
+        enableSwitch.addEventListener('click', async () => {
+          if (busy || enableSwitch.disabled) return;
+          busyState(true);
+          enableSwitch.disabled = true;
+          try {
+            config = await api(`/api/config/connections/${id}`, {
+              method: 'PATCH',
+              ...payload({ enabled: !enabled }),
+            });
+            renderCards();
+            $(`connection-enable-${id}`)?.focus();
+            onSaved(config);
+          } catch (error) {
+            toast(error.message);
+          } finally {
+            enableSwitch.disabled = false;
+            busyState(false);
+          }
+        });
+        actions.append(enableSwitch);
+      }
       const toggle = el('button', 'connection-expand icon-button'); toggle.id = `connection-toggle-${id}`; toggle.type = 'button';
       toggle.setAttribute('aria-label', `${expanded ? '收起' : '编辑'} ${name}`); toggle.title = expanded ? '收起' : '展开编辑';
       toggle.setAttribute('aria-expanded', String(expanded)); toggle.setAttribute('aria-controls', 'connection-editor');
