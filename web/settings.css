@@ -134,3 +134,7 @@
   background: var(--bg);
   transform: translateX(14px);
 }
+
+.model-table th:last-child {
+  text-align: right;
+}
