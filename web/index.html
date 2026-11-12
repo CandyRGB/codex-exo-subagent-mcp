@@ -83,31 +83,6 @@
         </div></div>
           <div class="model-table-scroll"><table class="model-table"><thead><tr><th scope="col">模型 ID</th><th scope="col">默认</th><th scope="col">操作</th></tr></thead><tbody id="model-rows"></tbody></table></div>
         </div>
-        <details id="connection-advanced" class="connection-advanced"><summary>高级设置</summary>
-          <div class="connection-form-grid">
-            <div class="settings-field">
-              <label for="connection-auth">认证方式</label>
-              <select id="connection-auth"><option value="none">无需认证</option><option value="stored">API Key（本机加密）</option><option value="env">从环境变量读取</option></select>
-            </div>
-            <div class="settings-field">
-              <label for="connection-auth-header">认证请求头</label>
-              <input id="connection-auth-header" value="Authorization" placeholder="Authorization">
-              <p>Authorization 使用 Bearer 格式，也支持 X-API-Key。</p>
-            </div>
-          </div>
-          <div class="settings-field"><label for="connection-context-window">上下文窗口（token）</label><input id="connection-context-window" type="number" min="2048" max="4000000" placeholder="使用 CLI 默认值"><p>按实际部署容量设置。</p></div>
-          <div class="reasoning-editor">
-            <div class="reasoning-heading"><strong>连接默认思考设置</strong></div>
-            <fieldset id="reasoning-settings-fields" class="reasoning-settings-fields">
-              <div class="settings-field"><label for="connection-reasoning">思考强度（原始值）</label><input id="connection-reasoning" list="connection-effort-options" maxlength="64" placeholder="留空使用服务默认值，例如 low / high / max"><datalist id="connection-effort-options"></datalist><details class="field-help"><summary>支持值与默认行为</summary><p id="reasoning-capability-hint">留空不发送强度；none 与留空含义不同。支持值取决于实际模型和服务。</p></details></div>
-              <details class="reasoning-extensions"><summary>思考模式与兼容扩展</summary>
-                <div class="settings-field"><label for="connection-thinking-format">参数结构</label><select id="connection-thinking-format"><option value="effort">接口标准强度（effort）</option><option value="thinking">thinking 对象（兼容扩展）</option><option value="reasoning">reasoning 对象（兼容扩展）</option></select><details class="field-help"><summary>参数结构说明</summary><p>标准结构按 Responses / Chat 协议发送强度。扩展结构仅在服务明确支持时使用；原生 Claude / Gemini 协议仍需兼容路由。</p></details></div>
-                <div class="connection-form-grid"><div class="settings-field"><label for="connection-thinking-mode">思考开关／模式</label><input id="connection-thinking-mode" list="connection-thinking-modes" maxlength="64" placeholder="留空，或 enabled / disabled / adaptive"><datalist id="connection-thinking-modes"><option value="enabled"></option><option value="disabled"></option><option value="adaptive"></option><option value="between_tools"></option></datalist><details class="field-help"><summary>模式说明</summary><p>自适应等模式需要服务支持 thinking 对象。标准结构关闭思考时发送 effort=none。</p></details></div><div class="settings-field"><label for="connection-thinking-budget">思考预算（token）</label><input id="connection-thinking-budget" type="number" min="0" max="4000000" placeholder="留空不发送预算"><details class="field-help"><summary>预算字段说明</summary><p>标准 effort 没有通用预算字段；扩展结构分别使用 budget_tokens 或 max_tokens。</p></details></div></div>
-              </details>
-            </fieldset>
-            <p id="reasoning-validation-error" class="reasoning-validation-error" role="alert" hidden></p><details id="reasoning-preview" class="field-help"><summary>查看请求参数</summary><pre id="reasoning-request-preview" class="reasoning-request-preview"></pre></details>
-          </div>
-        </details>
         <div class="settings-field"><label class="settings-checkbox"><input id="connection-enabled" type="checkbox" checked>启用此连接</label></div>
         <div id="connection-test-result" class="connection-test-result" role="status" hidden></div>
         <div class="connection-form-actions"><details id="connection-more" class="connection-more" hidden><summary>更多</summary><div class="connection-more-actions"><button id="export-connection" type="button">导出为 profile</button><button id="remove-connection" type="button" class="remove-connection">移除连接</button></div></details><button id="test-connection" type="button" class="secondary-button" disabled>测试连接</button><button id="save-connection" type="submit" class="primary-button">保存连接</button></div><p id="connection-test-hint" class="settings-form-note">测试仅使用已保存的设置，可能计入服务用量。</p>
@@ -146,7 +121,7 @@
           <summary>兼容扩展</summary>
           <div class="settings-field"><label for="model-thinking-format">参数结构</label><select id="model-thinking-format"><option value="effort">接口标准强度（effort）</option><option value="thinking">thinking 对象</option><option value="reasoning">reasoning 对象</option></select></div>
           <div class="connection-form-grid">
-            <div class="settings-field"><label for="model-thinking-mode">思考模式</label><input id="model-thinking-mode" list="connection-thinking-modes" maxlength="64"></div>
+            <div class="settings-field"><label for="model-thinking-mode">思考模式</label><input id="model-thinking-mode" list="model-thinking-modes" maxlength="64"><datalist id="model-thinking-modes"><option value="enabled"></option><option value="disabled"></option><option value="adaptive"></option><option value="between_tools"></option></datalist></div>
             <div class="settings-field"><label for="model-thinking-budget">思考预算</label><input id="model-thinking-budget" type="number" min="0" max="4000000"></div>
           </div>
         </details>

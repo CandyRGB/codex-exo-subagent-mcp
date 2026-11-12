@@ -60,7 +60,11 @@ test('settings controller unifies models, preserves per-model drafts and tests o
     unprotect: value => Buffer.from(value, 'base64').toString(),
   };
   const store = new ModelStore({ stateDir: fixture(), codec });
-  const c = save(store, { models: ['a', 'b'], default_model: 'a', reasoning_effort: 'high', model_reasoning: { b: { reasoning_effort: 'max' } } }); store.setDefault(c.id, 'a');
+  const c = save(store, {
+    models: ['a', 'b'], default_model: 'a', context_window: 131072, auth_header: 'X-API-Key',
+    reasoning_effort: 'high', model_reasoning: { b: { reasoning_effort: 'max' } },
+  });
+  store.setDefault(c.id, 'a');
   const v = await viewer(t, store); let probes = 0, saved = 0;
   v.gateway.probe = async (id, model) => { probes++; return { ok: true, tool_calling: true, message: `TEST ${model}` }; };
   let checkedInput;
@@ -104,7 +108,6 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.ok(document.querySelectorAll('header')[0].contains($('new-connection')), 'Add connection belongs to the top bar');
   assert.equal($('new-connection').hidden, false); settings.hide(); assert.equal($('new-connection').hidden, true); await settings.show();
   assert.equal($('connection-kind-field').hidden, true);
-  assert.equal($('reasoning-preview').open, false);
   assert.ok($('connections-list').querySelectorAll('select').every(select => $('connection-editor').contains(select)), 'Selection controls belong to the expanded form');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 1);
   await action('编辑模型 b').dispatch('click');
@@ -112,10 +115,7 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal($('model-reasoning').value, 'max');
   await $('cancel-model-dialog').dispatch('click');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 2, 'Viewing model settings is not an edit');
-  $('connection-reasoning').value = 'provider:max';
-  $('connection-thinking-budget').value = '2048'; await $('connection-thinking-budget').dispatch('input');
-  assert.equal($('reasoning-preview').open, false); assert.equal($('reasoning-validation-error').hidden, false, 'Parameter errors remain visible while JSON preview is collapsed');
-  $('connection-thinking-budget').value = ''; await $('connection-thinking-budget').dispatch('input'); assert.equal($('reasoning-validation-error').hidden, true);
+  $('connection-name').value = 'Changed connection name';
   await $('test-connection').dispatch('click'); assert.equal(probes, 2); assert.match($('connection-test-result').textContent, /未保存/);
   const radio = $('model-rows').querySelectorAll('input').find(input => input.getAttribute('aria-label') === '将 b 设为默认模型'); radio.checked = true; await radio.dispatch('change');
   await $('add-model').dispatch('click');
@@ -142,6 +142,9 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal(store.get(c.id).protocol, 'responses', 'Choosing from the styled menu reaches the saved configuration');
   assert.equal(store.get(c.id).base_url, 'http://127.0.0.1:1/v1');
   assert.equal(store.get(c.id).auth_mode, 'none');
+  assert.equal(store.get(c.id).auth_header, 'X-API-Key');
+  assert.equal(store.get(c.id).context_window, 131072);
+  assert.equal(store.get(c.id).reasoning_effort, 'high');
   assert.deepEqual(store.get(c.id).models, ['a', 'b', 'c', 'd']); assert.equal(store.get(c.id).default_model, 'b');
   assert.deepEqual(store.get(c.id).model_limits.c, { context_window: 32768, max_output_tokens: 4096 });
   assert.equal(store.get(c.id).model_reasoning.b.reasoning_effort, 'max'); assert.equal(probes, 2, 'Saving does not run inference');

@@ -1,4 +1,4 @@
-import { applyReasoning, normalizeReasoning } from './reasoning.js';
+import { normalizeReasoning } from './reasoning.js';
 import { ModelSelection } from './model-selection.js';
 import { createSelectMenus } from './dropdown.js';
 import { inferenceEndpoint, normalizeApiBaseUrl } from './api-endpoint.js';
@@ -97,6 +97,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   }
   function renderModels() {
     const rows = document.createDocumentFragment();
+    const connection = config?.connections.find(item => item.id === editingId) || {};
     const candidates = discoveredModels.filter(model => !modelsOf().includes(model));
     for (const model of [...modelsOf(), ...candidates]) {
       const added = modelsOf().includes(model);
@@ -105,8 +106,8 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       name.append(el('code', '', model));
       if (added) {
         const limits = selection.limits[model] || {};
-        const context = limits.context_window || Number($('connection-context-window').value);
-        const thinking = selection.overrides[model] || readReasoningFields();
+        const context = limits.context_window || connection.context_window;
+        const thinking = selection.overrides[model] || connection;
         const effort = thinking.reasoning_effort;
         const profile = $('connection-kind').value === 'profile';
         const parameters = profile ? ['由 profile 配置'] : [
@@ -124,7 +125,14 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       if (added) {
         const radio = el('input'); radio.type = 'radio'; radio.name = 'default-model'; radio.checked = model === selection.defaultModel;
         radio.setAttribute('aria-label', `将 ${model} 设为默认模型`);
-        radio.addEventListener('change', () => { if (busy) return; selection.setDefault(model); renderModels(); previewReasoning(); }); const hit = el('label', 'model-default-hit'); hit.append(radio); chosen.append(hit);
+        radio.addEventListener('change', () => {
+          if (busy) return;
+          selection.setDefault(model);
+          renderModels();
+        });
+        const hit = el('label', 'model-default-hit');
+        hit.append(radio);
+        chosen.append(hit);
       }
       const actions = el('td'); const group = el('div', 'model-row-actions');
       if (added) {
@@ -133,7 +141,6 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
           if (busy) return;
           selection.remove(model);
           renderModels();
-          previewReasoning();
         }, true));
       } else {
         group.append(modelAction('plus', `添加模型 ${model}`, () => openModelDialog(model)));
@@ -143,19 +150,19 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     if (!modelsOf().length && !candidates.length) { const row = el('tr'); const cell = el('td', 'empty-models', '添加模型或获取模型列表。'); cell.colSpan = 3; row.append(cell); rows.append(row); }
     $('model-rows').replaceChildren(rows);
   }
-  function readReasoningFields(prefix = 'connection') {
+  function readModelReasoning() {
     return {
-      reasoning_effort: $(`${prefix}-reasoning`).value.trim(),
-      thinking_format: $(`${prefix}-thinking-format`).value,
-      thinking_mode: $(`${prefix}-thinking-mode`).value.trim(),
-      thinking_budget: $(`${prefix}-thinking-budget`).value,
+      reasoning_effort: $('model-reasoning').value.trim(),
+      thinking_format: $('model-thinking-format').value,
+      thinking_mode: $('model-thinking-mode').value.trim(),
+      thinking_budget: $('model-thinking-budget').value,
     };
   }
-  function fillReasoningFields(prefix, settings) {
-    $(`${prefix}-reasoning`).value = settings.reasoning_effort || '';
-    $(`${prefix}-thinking-format`).value = settings.thinking_format || 'effort';
-    $(`${prefix}-thinking-mode`).value = settings.thinking_mode || '';
-    $(`${prefix}-thinking-budget`).value = settings.thinking_budget ?? '';
+  function fillModelReasoning(settings) {
+    $('model-reasoning').value = settings.reasoning_effort || '';
+    $('model-thinking-format').value = settings.thinking_format || 'effort';
+    $('model-thinking-mode').value = settings.thinking_mode || '';
+    $('model-thinking-budget').value = settings.thinking_budget ?? '';
   }
   function fillEfforts(list, model, examples = []) {
     const capability = Object.hasOwn(discoveredCapabilities, model) ? discoveredCapabilities[model] : null;
@@ -167,22 +174,6 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       list.append(option);
     }
     return capability;
-  }
-  function previewReasoning() {
-    try {
-      const settings = normalizeReasoning(readReasoningFields());
-      const parameters = applyReasoning({ model: '__preview' }, settings, $('connection-protocol').value); delete parameters.model;
-      $('reasoning-request-preview').textContent = JSON.stringify(parameters, null, 2);
-      $('reasoning-validation-error').hidden = true;
-    } catch (error) {
-      $('reasoning-request-preview').textContent = error.message;
-      $('reasoning-validation-error').textContent = error.message; $('reasoning-validation-error').hidden = false;
-    }
-    const capability = fillEfforts($('connection-effort-options'), selection.defaultModel);
-    $('reasoning-capability-hint').textContent = capability?.efforts?.length
-      ? `服务声明的思考档位：${capability.efforts.join(' / ')}${capability.default_effort ? `；默认 ${capability.default_effort}` : ''}。仅供参考，也可手填其他原始值。`
-      : '留空不发送强度；none 与留空含义不同。支持值取决于实际模型和服务。';
-    selects.refresh();
   }
   function modelResult(message = '', ok = true) {
     const target = $('model-dialog-result');
@@ -214,7 +205,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     for (const field of $('model-parameter-fields').querySelectorAll('input, select')) field.disabled = profile;
     $('test-model-draft').hidden = profile;
     $('model-reasoning-override').checked = Boolean(thinking);
-    fillReasoningFields('model', thinking || {});
+    fillModelReasoning(thinking || {});
     syncModelReasoning();
     modelResult();
     modelDialog.showModal();
@@ -233,7 +224,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
         limits[field] = value;
       }
     }
-    const thinking = !profile && $('model-reasoning-override').checked ? normalizeReasoning(readReasoningFields('model')) : null;
+    const thinking = !profile && $('model-reasoning-override').checked ? normalizeReasoning(readModelReasoning()) : null;
     const candidate = new ModelSelection(selection.snapshot());
     candidate.update(editingModel, model, limits, thinking);
     return { model, candidate };
@@ -296,24 +287,26 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       preview.className = 'endpoint-preview invalid';
     }
   }
+  function usesEnvironmentKey(connection) {
+    return connection?.auth_mode === 'env' || (!config?.secret_storage_supported && connection?.auth_mode !== 'stored');
+  }
   function syncFields() {
-    const profile = $('connection-kind').value === 'profile'; const auth = $('connection-auth').value;
+    const profile = $('connection-kind').value === 'profile';
+    const existing = config?.connections.find(c => c.id === editingId);
+    const envKey = usesEnvironmentKey(existing);
     $('endpoint-fields').hidden = profile; $('profile-fields').hidden = !profile;
-    $('connection-advanced').hidden = profile;
     $('connection-base-url').required = !profile;
     $('connection-profile').required = profile;
     $('connection-profile').disabled = !profile;
     for (const field of $('endpoint-fields').querySelectorAll('input, select')) field.disabled = profile;
-    for (const field of $('connection-advanced').querySelectorAll('input, select')) field.disabled = profile;
-    $('stored-auth-field').hidden = auth !== 'stored'; $('env-auth-field').hidden = auth !== 'env';
-    if (profile || auth !== 'stored') hideApiKey();
-    $('connection-env-var').required = !profile && auth === 'env';
-    const existing = config?.connections.find(c => c.id === editingId);
-    $('connection-api-key').required = !profile && auth === 'stored' && existing?.auth_mode === 'stored' && !existing.has_api_key;
+    $('stored-auth-field').hidden = envKey;
+    $('env-auth-field').hidden = !envKey;
+    if (profile || envKey) hideApiKey();
+    $('connection-env-var').required = !profile && existing?.auth_mode === 'env';
+    apiKeyInput.required = !profile && existing?.auth_mode === 'stored' && !existing.has_api_key;
     $('discover-models').hidden = profile;
     $('test-connection').textContent = profile ? '检查配置' : '测试连接';
     $('connection-test-hint').textContent = profile ? '此连接沿用已有 Codex 配置，检查不会调用模型。' : '连接测试使用默认模型及其思考设置，可能计入该服务的用量。';
-    $('reasoning-settings-fields').disabled = profile;
     renderModels();
     selects.refresh();
     previewEndpoint();
@@ -321,21 +314,28 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   function draft(selected = selection) {
     const existing = config?.connections.find(c => c.id === editingId);
     const kind = $('connection-kind').value === 'profile' ? 'profile' : existing?.kind || 'api';
-    let authMode = kind === 'profile' ? 'none' : $('connection-auth').value;
+    const envKey = usesEnvironmentKey(existing);
     const key = apiKeyInput.value.trim();
-    const apiKey = authMode === 'stored' && key !== revealedSavedKey ? key : '';
-    if (authMode === 'stored' && !apiKey && !existing?.has_api_key && existing?.auth_mode !== 'stored') {
-      authMode = 'none';
+    const apiKey = kind !== 'profile' && !envKey && key !== revealedSavedKey ? key : '';
+    const keyEnvironment = $('connection-env-var').value.trim();
+    let authMode = 'none';
+    if (kind !== 'profile') {
+      if (envKey && (keyEnvironment || existing?.auth_mode === 'env')) authMode = 'env';
+      else if (apiKey || existing?.auth_mode === 'stored') authMode = 'stored';
     }
     return {
       name: $('connection-name').value.trim(), kind,
       profile: $('connection-profile').value.trim(),
       protocol: $('connection-protocol').value, base_url: $('connection-base-url').value.trim(),
       auth_mode: authMode, api_key: apiKey,
-      api_key_env: $('connection-env-var').value.trim(), auth_header: $('connection-auth-header').value.trim(),
+      api_key_env: keyEnvironment,
+      auth_header: existing?.auth_header || 'Authorization',
       ...selected.snapshot(),
-      context_window: $('connection-context-window').value,
-      ...readReasoningFields(),
+      context_window: existing?.context_window,
+      reasoning_effort: existing?.reasoning_effort,
+      thinking_format: existing?.thinking_format,
+      thinking_mode: existing?.thinking_mode,
+      thinking_budget: existing?.thinking_budget,
       enabled: $('connection-enabled').checked,
     };
   }
@@ -356,22 +356,12 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('connection-kind').value = connection?.kind === 'profile' ? 'profile' : 'api';
     $('connection-kind').disabled = Boolean(connection);
     $('connection-kind-field').hidden = Boolean(connection);
-    $('connection-advanced').open = false;
-    $('reasoning-preview').open = false;
     $('connection-protocol').value = connection?.protocol === 'chat_completions' ? 'chat_completions' : 'responses';
     $('connection-base-url').value = connection?.base_url || '';
-    const supportsStoredKey = config?.secret_storage_supported;
-    const savedAuthMode = connection?.auth_mode || 'none';
-    $('connection-auth').value = savedAuthMode === 'none' && supportsStoredKey && connection?.kind !== 'profile' ? 'stored' : savedAuthMode;
-    $('connection-auth').querySelector('option[value="stored"]').disabled = !supportsStoredKey;
     apiKeyInput.value = '';
     apiKeyInput.placeholder = connection?.has_api_key ? '········' : '可留空';
     $('connection-env-var').value = connection?.api_key_env || '';
-    $('connection-auth-header').value = connection?.auth_header || 'Authorization';
     selection = new ModelSelection(connection || {});
-    fillReasoningFields('connection', connection || {});
-    previewReasoning();
-    $('connection-context-window').value = connection?.context_window || '';
     $('connection-enabled').checked = connection?.enabled !== false;
     $('connection-profile').value = connection?.profile || '';
     $('export-connection').hidden = !connection || connection.kind === 'profile';
@@ -484,21 +474,14 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
       selection = readModelDraft().candidate;
       closeModelDialog();
       renderModels();
-      previewReasoning();
     } catch (error) {
       modelResult(error.message, false);
     }
   });
-  for (const id of ['connection-reasoning', 'connection-thinking-format', 'connection-thinking-mode', 'connection-thinking-budget', 'connection-protocol']) $(id).addEventListener('input', previewReasoning);
   $('connection-protocol').addEventListener('input', previewEndpoint);
   $('connection-base-url').addEventListener('input', previewEndpoint);
-  $('connection-auth').addEventListener('change', syncFields);
   $('connection-kind').addEventListener('change', syncFields);
   apiKeyToggle.addEventListener('click', toggleApiKey);
-  $('connection-context-window').addEventListener('input', renderModels);
-  for (const id of ['connection-reasoning', 'connection-thinking-mode', 'connection-thinking-budget']) {
-    $(id).addEventListener('input', renderModels);
-  }
   async function inspectService(loadModels) {
     if (busy) return;
     const input = draft();
@@ -509,7 +492,6 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     try {
       const discovered = await api('/api/config/discover', { method: 'POST', ...payload({ connection: input, connection_id: editingId }) });
       discoveredCapabilities = discovered.capabilities || {};
-      previewReasoning();
       if (loadModels) {
         discoveredModels = discovered.models;
         renderModels();
