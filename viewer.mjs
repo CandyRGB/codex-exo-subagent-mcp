@@ -53,6 +53,11 @@ export async function createViewer({ stateDir = join(root, 'state'), codexHome =
       if (url.pathname === '/api/config/connections' && request.method === 'POST') { send(200, store.save(await readJSON(request))); return; }
       if (url.pathname === '/api/config/default' && request.method === 'PATCH') { const body = await readJSON(request); send(200, store.setDefault(body.connection_id, body.model)); return; }
       if (url.pathname === '/api/config/discover' && request.method === 'POST') { const body = await readJSON(request); send(200, await gateway.discover(body.connection, body.connection_id || null)); return; }
+      if (url.pathname === '/api/config/test-model' && request.method === 'POST') {
+        const body = await readJSON(request);
+        send(200, await gateway.probeDraft(body.connection, body.connection_id || null, body.model));
+        return;
+      }
       const connectionRoute = url.pathname.match(/^\/api\/config\/connections\/([A-Za-z0-9_-]+)(\/(?:test|export-profile|reveal-key))?$/);
       if (connectionRoute) {
         const id = connectionRoute[1];

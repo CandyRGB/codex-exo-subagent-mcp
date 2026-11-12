@@ -63,7 +63,16 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   const c = save(store, { models: ['a', 'b'], default_model: 'a', reasoning_effort: 'high', model_reasoning: { b: { reasoning_effort: 'max' } } }); store.setDefault(c.id, 'a');
   const v = await viewer(t, store); let probes = 0, saved = 0;
   v.gateway.probe = async (id, model) => { probes++; return { ok: true, tool_calling: true, message: `TEST ${model}` }; };
-  v.gateway.discover = async () => ({ models: ['b', 'd'], capabilities: {} });
+  let checkedInput;
+  let testedDraft;
+  v.gateway.probeDraft = async (input, id, model) => {
+    testedDraft = { input, id, model };
+    return { tool_calling: true, message: 'DRAFT TEST' };
+  };
+  v.gateway.discover = async input => {
+    checkedInput = input;
+    return { models: ['b', 'd'], capabilities: { d: { efforts: ['low', 'max'] } } };
+  };
   const originalFetch = globalThis.fetch, originalDocument = globalThis.document;
   const document = documentFixture(readFileSync(fileURLToPath(new URL('../web/index.html', import.meta.url)), 'utf8'));
   globalThis.document = document; globalThis.fetch = (url, options) => originalFetch(typeof url === 'string' && url.startsWith('/') ? v.url + url : url, options);
@@ -98,7 +107,10 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal($('reasoning-preview').open, false);
   assert.ok($('connections-list').querySelectorAll('select').every(select => $('connection-editor').contains(select)), 'Selection controls belong to the expanded form');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 1);
-  await action('编辑 b 的思考设置').dispatch('click');
+  await action('编辑模型 b').dispatch('click');
+  assert.equal($('model-dialog').open, true);
+  assert.equal($('model-reasoning').value, 'max');
+  await $('cancel-model-dialog').dispatch('click');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 2, 'Viewing model settings is not an edit');
   $('connection-reasoning').value = 'provider:max';
   $('connection-thinking-budget').value = '2048'; await $('connection-thinking-budget').dispatch('input');
@@ -106,9 +118,20 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   $('connection-thinking-budget').value = ''; await $('connection-thinking-budget').dispatch('input'); assert.equal($('reasoning-validation-error').hidden, true);
   await $('test-connection').dispatch('click'); assert.equal(probes, 2); assert.match($('connection-test-result').textContent, /未保存/);
   const radio = $('model-rows').querySelectorAll('input').find(input => input.getAttribute('aria-label') === '将 b 设为默认模型'); radio.checked = true; await radio.dispatch('change');
-  $('model-id-input').value = 'c'; await $('add-model').dispatch('click');
+  await $('add-model').dispatch('click');
+  $('model-id-input').value = 'c';
+  $('model-context-window').value = '32768';
+  $('model-max-output').value = '4096';
+  await $('test-model-draft').dispatch('click');
+  assert.equal(testedDraft.model, 'c');
+  assert.deepEqual(testedDraft.input.model_limits.c, { context_window: 32768, max_output_tokens: 4096 });
+  assert.equal($('model-dialog-result').textContent, 'DRAFT TEST');
+  assert.ok(!store.get(c.id).models.includes('c'));
+  await $('model-dialog-form').dispatch('submit');
   await $('discover-models').dispatch('click'); await eventually(() => !$('save-connection').disabled);
   await action('添加模型 d').dispatch('click');
+  assert.deepEqual($('model-effort-options').children.map(option => option.value), ['low', 'max']);
+  await $('model-dialog-form').dispatch('submit');
   await $('connection-protocol-trigger').dispatch('click');
   await $('settings-select-menu').children.find(option => option.textContent === 'Responses API').dispatch('click');
   assert.equal($('connection-protocol').value, 'responses');
@@ -120,11 +143,16 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal(store.get(c.id).base_url, 'http://127.0.0.1:1/v1');
   assert.equal(store.get(c.id).auth_mode, 'none');
   assert.deepEqual(store.get(c.id).models, ['a', 'b', 'c', 'd']); assert.equal(store.get(c.id).default_model, 'b');
-  assert.equal(store.get(c.id).model_reasoning.b.reasoning_effort, 'provider:max'); assert.equal(probes, 2, 'Saving does not run inference');
+  assert.deepEqual(store.get(c.id).model_limits.c, { context_window: 32768, max_output_tokens: 4096 });
+  assert.equal(store.get(c.id).model_reasoning.b.reasoning_effort, 'max'); assert.equal(probes, 2, 'Saving does not run inference');
   await $('test-connection').dispatch('click'); await eventually(() => !$('save-connection').disabled); assert.equal(probes, 3); assert.match($('connection-test-result').textContent, /TEST b/);
-  await action('移除模型 b').dispatch('click');
-  await action('编辑 d 的思考设置').dispatch('click'); assert.equal($('connection-thinking-format-trigger').disabled, true);
-  $('reasoning-model-override').checked = true; await $('reasoning-model-override').dispatch('change'); assert.equal($('connection-thinking-format-trigger').disabled, false); $('connection-reasoning').value = '';
+  await action('删除模型 b').dispatch('click');
+  await action('编辑模型 d').dispatch('click');
+  assert.equal($('model-thinking-format-trigger').disabled, true);
+  $('model-reasoning-override').checked = true;
+  await $('model-reasoning-override').dispatch('change');
+  assert.equal($('model-thinking-format-trigger').disabled, false);
+  await $('model-dialog-form').dispatch('submit');
   await $('connection-form').dispatch('submit'); await eventually(() => saved === 2 && !$('save-connection').disabled);
   assert.equal(store.get(c.id).default_model, 'a'); assert.equal(store.get(c.id).model_reasoning.b, undefined); assert.deepEqual(store.get(c.id).model_reasoning.d, {});
   await $('new-connection').dispatch('click');
@@ -138,8 +166,14 @@ test('settings controller unifies models, preserves per-model drafts and tests o
   assert.equal($(`connection-toggle-${c.id}`).getAttribute('aria-expanded'), 'false');
   assert.equal($(`connection-row-${profile.id}`).contains($('connection-editor')), true);
   await $('new-connection').dispatch('click'); $('connection-name').value = 'Created from row';
-  $('connection-base-url').value = 'http://127.0.0.1:11434/v1'; $('model-id-input').value = 'new-model'; await $('add-model').dispatch('click');
+  $('connection-base-url').value = 'http://127.0.0.1:11434/v1';
+  await $('add-model').dispatch('click');
+  $('model-id-input').value = 'new-model';
+  await $('model-dialog-form').dispatch('submit');
   $('connection-api-key').value = 'fixture-key';
+  await $('check-api-service').dispatch('click');
+  await eventually(() => !$('check-api-service').disabled);
+  assert.equal(checkedInput.api_key, 'fixture-key');
   await $('show-api-key').dispatch('click');
   assert.equal($('connection-api-key').type, 'text');
   await $('connection-toggle-new').dispatch('click'); assert.equal($('connection-row-new'), undefined);
@@ -276,11 +310,13 @@ test('model discovery exposes effort capabilities as hints and does not change s
 
 test('managed CLI does not interpret upstream effort values as client execution modes', async t => {
   const stateDir = fixture(); const store = new ModelStore({ stateDir });
-  const c = save(store, { reasoning_effort: 'provider:max' }); store.setDefault(c.id, c.default_model);
+  const c = save(store, { reasoning_effort: 'provider:max', models: ['test-model', 'alternate'], context_window: 32768, model_limits: { alternate: { context_window: 65536 } } });
+  store.setDefault(c.id, c.default_model);
   const manager = new JobManager({ stateDir, modelStore: store, env: { ...process.env, CODEX_SUBAGENT_DEPTH: '0' }, codexBin: process.execPath, codexArgs: [fileURLToPath(new URL('./fake-codex.mjs', import.meta.url))] }); t.after(() => manager.shutdown());
-  const result = await manager.call({ prompt: JSON.stringify({ reportArgs: true }) });
+  const result = await manager.call({ prompt: JSON.stringify({ reportArgs: true }), model: 'alternate' });
   const argv = JSON.parse(result.result.text).argv;
   assert.ok(!argv.some(arg => arg.includes('model_reasoning_effort') || arg.includes('provider:max')));
+  assert.ok(argv.includes('model_context_window=65536'));
 });
 
 test('users can reference existing profiles and preserve legacy API connection routing on edits', async t => {
@@ -482,6 +518,18 @@ test('connection probes allow automatic tools in thinking mode and only confirm 
     const store = new ModelStore({ stateDir: fixture() }); const c = save(store, { protocol, base_url: endpoint, reasoning_effort: 'high' }); const v = await viewer(t, store);
     assert.equal((await v.gateway.probe(c.id)).tool_calling, true);
     assert.equal(protocol === 'responses' ? observed.reasoning?.effort : observed.reasoning_effort, 'high');
+    const before = readFileSync(store.path, 'utf8');
+    const draft = { ...c, models: ['draft-model'], default_model: 'draft-model', model_limits: { 'draft-model': { max_output_tokens: 128 } } };
+    const response = await fetch(v.url + '/api/config/test-model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connection: draft, connection_id: c.id, model: 'draft-model' }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).tool_calling, true);
+    assert.equal(observed.model, 'draft-model');
+    assert.equal(protocol === 'responses' ? observed.max_output_tokens : observed.max_tokens, 128);
+    assert.equal(readFileSync(store.path, 'utf8'), before);
     emitTool = false;
     const unconfirmed = await v.gateway.probe(c.id);
     assert.equal(unconfirmed.tool_calling, false);

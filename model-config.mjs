@@ -1,6 +1,7 @@
 // One provider definition for managed jobs and optional CLI profile exports.
-export function managedConfig(connection, { baseUrl, fingerprint }) {
+export function managedConfig(connection, { baseUrl, fingerprint, model = connection.default_model }) {
   const provider = 'subagent_gateway';
+  const contextWindow = connection.model_limits?.[model]?.context_window || connection.context_window;
   return {
     model_provider: provider,
     [`model_providers.${provider}.name`]: 'Subagent model gateway',
@@ -12,7 +13,7 @@ export function managedConfig(connection, { baseUrl, fingerprint }) {
     [`model_providers.${provider}.capabilities.remote_compaction`]: 'unsupported',
     [`model_providers.${provider}.http_headers`]: { 'X-Subagent-Route-Hash': fingerprint },
     web_search: 'disabled',
-    ...(connection.context_window ? { model_context_window: connection.context_window } : {}),
+    ...(contextWindow ? { model_context_window: contextWindow } : {}),
   };
 }
 

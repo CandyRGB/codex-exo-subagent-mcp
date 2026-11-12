@@ -42,6 +42,8 @@ export function createSelectMenus(doc = document) {
   }
   function open(control) {
     if (control.select.matches(':disabled')) return;
+    const surface = control.button.closest('dialog') || doc.body;
+    surface.append(menu);
     close(); opened = control; render();
     control.button.setAttribute('aria-expanded', 'true'); menu.setAttribute('aria-labelledby', control.label.id);
     const rect = control.button.getBoundingClientRect(), gap = 6, margin = 8;

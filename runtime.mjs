@@ -242,7 +242,7 @@ export class JobManager {
     ];
     const childEnv = { ...this.env, CODEX_SUBAGENT_DEPTH: String(this.depth + 1) };
     if (managed) {
-      const overrides = managedConfig(connection, { baseUrl: `http://127.0.0.1:${gatewayPort}`, fingerprint: job.connection_fingerprint });
+      const overrides = managedConfig(connection, { baseUrl: `http://127.0.0.1:${gatewayPort}`, fingerprint: job.connection_fingerprint, model });
       for (const [key, value] of Object.entries(overrides)) argv.push('-c', `${key}=${tomlValue(value)}`);
       childEnv.SUBAGENT_GATEWAY_TOKEN = gatewayToken;
     }

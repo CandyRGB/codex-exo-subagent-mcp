@@ -67,6 +67,7 @@ export function documentFixture(html) {
   }
   document.getElementById = id => document.querySelectorAll('*').find(node => node.id === id);
   document.createElement = tag => new Element(tag);
+  document.createElementNS = (_, tag) => new Element(tag);
   document.createDocumentFragment = () => new Element('fragment');
   document.body = document.querySelectorAll('body')[0];
   document.defaultView = new Element('window'); document.defaultView.innerWidth = 1024; document.defaultView.innerHeight = 768;

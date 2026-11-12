@@ -55,7 +55,7 @@ export class ModelStore {
   }
   publicConfig() {
     const config = this.read(); const secrets = this.credentials();
-    const fields = ['id', 'name', 'kind', 'protocol', 'profile', 'base_url', 'models', 'default_model', 'auth_mode', 'auth_header', 'api_key_env', 'context_window', 'reasoning_effort', 'thinking_mode', 'thinking_budget', 'thinking_format', 'model_reasoning', 'enabled'];
+    const fields = ['id', 'name', 'kind', 'protocol', 'profile', 'base_url', 'models', 'default_model', 'auth_mode', 'auth_header', 'api_key_env', 'context_window', 'reasoning_effort', 'thinking_mode', 'thinking_budget', 'thinking_format', 'model_reasoning', 'model_limits', 'enabled'];
     return { version: config.version, default_connection_id: config.default_connection_id, secret_storage_supported: this.codec.supported, connections: config.connections.map(c => ({ ...Object.fromEntries(fields.filter(field => c[field] !== undefined).map(field => [field, c[field]])), has_api_key: Boolean(secrets[c.id]) })) };
   }
   normalize(input, previous = null) {
@@ -91,6 +91,22 @@ export class ModelStore {
       connection.context_window = value;
     }
     Object.assign(connection, normalizeReasoning(input));
+    if (input.model_limits !== undefined) {
+      if (!input.model_limits || typeof input.model_limits !== 'object' || Array.isArray(input.model_limits)) fail('模型参数必须是对象。');
+      const limits = [];
+      for (const [model, fields] of Object.entries(input.model_limits)) {
+        if (!models.includes(model) || !fields || typeof fields !== 'object' || Array.isArray(fields)) fail('模型参数只能用于当前模型列表。');
+        const values = {};
+        for (const [field, minimum, label] of [['context_window', 2048, '上下文窗口'], ['max_output_tokens', 1, '最大输出 Token 数']]) {
+          const value = fields[field];
+          if (value === undefined) continue;
+          if (!Number.isInteger(value) || value < minimum || value > 4_000_000) fail(`${label}必须是 ${minimum}–4000000 的整数。`);
+          values[field] = value;
+        }
+        if (Object.keys(values).length) limits.push([model, values]);
+      }
+      if (limits.length) connection.model_limits = Object.fromEntries(limits);
+    }
     if (input.model_reasoning !== undefined) {
       if (!input.model_reasoning || typeof input.model_reasoning !== 'object' || Array.isArray(input.model_reasoning)) fail('模型独立思考设置必须是对象。');
       const entries = Object.entries(input.model_reasoning);
