@@ -6,6 +6,7 @@ export function createSelectMenus(doc = document) {
   menu.setAttribute('role', 'listbox'); doc.body.append(menu);
   let opened = null, active = -1, options = [], prefix = '', lastTyped = 0;
   const controls = [];
+  const visibleOptions = select => [...select.querySelectorAll('option')].filter(option => !option.hidden);
   const close = () => {
     if (opened) { opened.button.setAttribute('aria-expanded', 'false'); opened.button.removeAttribute('aria-activedescendant'); }
     menu.hidden = true; opened = null; prefix = '';
@@ -27,7 +28,7 @@ export function createSelectMenus(doc = document) {
   }
   function render() {
     menu.replaceChildren();
-    options = [...opened.select.querySelectorAll('option')].map((option, index) => {
+    options = visibleOptions(opened.select).map((option, index) => {
       const element = doc.createElement('div'); element.id = `${menu.id}-${index}`;
       element.setAttribute('role', 'option'); element.setAttribute('aria-selected', String(option.value === opened.select.value));
       const disabled = option.disabled || Boolean(option.closest('optgroup')?.disabled);
@@ -41,7 +42,7 @@ export function createSelectMenus(doc = document) {
     highlight(index);
   }
   function open(control) {
-    if (control.select.matches(':disabled')) return;
+    if (control.button.disabled) return;
     const surface = control.button.closest('dialog') || doc.body;
     surface.append(menu);
     close(); opened = control; render();
@@ -63,7 +64,7 @@ export function createSelectMenus(doc = document) {
     }
   }
   function keydown(event, control) {
-    if (control.select.matches(':disabled')) return;
+    if (control.button.disabled) return;
     if (event.key === 'Tab') { close(); return; }
     if (event.key === 'Escape') { if (opened === control) { event.preventDefault(); event.stopPropagation(); close(); } return; }
     if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(event.key)) {
@@ -88,7 +89,7 @@ export function createSelectMenus(doc = document) {
     for (const control of controls) {
       const option = [...control.select.querySelectorAll('option')].find(option => option.value === control.select.value);
       control.value.textContent = option?.label || option?.textContent || '';
-      control.button.disabled = control.select.matches(':disabled');
+      control.button.disabled = control.select.matches(':disabled') || !visibleOptions(control.select).length;
     }
     if (opened) { if (opened.button.disabled) close(); else render(); }
   }

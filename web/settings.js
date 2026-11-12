@@ -31,6 +31,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   function setProfileChoices(name, listed = false) {
     const placeholder = el('option', '', listed && !profileNames.length ? '未找到本机 profile' : '选择本机 profile');
     placeholder.value = '';
+    placeholder.hidden = true;
     const options = profileNames.map(value => {
       const option = el('option', '', value);
       option.value = value;
