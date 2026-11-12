@@ -1,158 +1,191 @@
-<p align="center"><img src="web/favicon.svg" width="64" alt="codex-exo-subagent"></p>
+<div align="center">
+  <img src="web/favicon.svg" width="88" alt="codex-exo-subagent logo">
 
-# codex-exo-subagent
+  # codex-exo-subagent
 
-为 Codex 接入外部子代理模型，并提供本地会话工作区。支持本地部署、直连 API 和模型路由，保留主代理的官方模型配置。
+  *Give Codex a second worker that runs on a model you choose*
 
-**零 npm 运行依赖 · Node.js 24+ · Windows 为当前验证平台**
+  ![Node.js](https://img.shields.io/badge/Node.js-24%2B-3c873a?style=flat-square)
+  ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-2f6feb?style=flat-square)
+  ![Platform](https://img.shields.io/badge/verified-Windows%2011-0078d4?style=flat-square)
 
-## 功能
+  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/lang-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-2f6feb?style=flat-square" alt="切换到简体中文"></a>
 
-- **任务管理**：同步或后台执行、进度查询、等待、取消、继续会话。
-- **模型配置**：已保存的连接每行一条，通过右侧按钮展开编辑，临时收起后保留当前填写内容；顶栏“添加连接”在列表顶部展开新表单。支持管理模型、默认模型和每个模型的思考设置；保存后可单独测试。选择菜单使用统一圆角样式，支持键盘操作。
-- **接口接入**：支持 Responses API 和 OpenAI 兼容的 Chat Completions，网关处理流式文本、工具调用和工具结果。
-- **会话页面**：左侧项目与最近会话，右侧消息与执行记录，支持搜索、置顶、重命名、分页和导出。最近列表仅显示会话标题，按更新时间排序；会话标题集中在面包屑，会话信息不再显示固定来源说明。
-- **执行记录**：同一终端进程的空 `write_stdin` 轮询不单独显示，新增输出合并回原命令卡片；有真实输入的 `write_stdin` 仍保留。连续命令默认折叠在“运行了命令”中；展开单条命令即可查看贴满内容区的输出，右上角支持复制完整输出；原始 API 记录、导出和完整输出不变。
-- **本地存储**：仅显示本 MCP 登记的会话；模型密钥支持 Windows 当前用户加密保存或环境变量认证。
+  [Features](#features) · [Requirements](#requirements) · [Quick start](#quick-start) · [Model connections](#model-connections) · [The tool](#the-codex_subagent-tool) · [Local workspace](#local-workspace) · [Reference](docs/REFERENCE.md)
 
-## 快速开始
+</div>
 
-准备 Node.js 24+、Git，以及支持 `codex exec --json` 和 `codex exec resume` 的 Codex CLI。
+An MCP server that hands work from your main Codex session to an independent Codex CLI process. The child agent runs on a **model connection you configure in a local web page** — a local runtime such as Ollama, vLLM or LM Studio, a hosted API, a router, or an existing Codex profile. Your official Codex model, profile and credentials are left untouched.
+
+Jobs are tracked from start to finish: run them in the background, poll progress, cancel the process tree, and resume the same Codex session later. A loopback-only workspace shows the full transcript of every session this server has registered.
+
+## Features
+
+- **One tool, full lifecycle.** `codex_subagent` covers synchronous runs, background starts, progress and bounded waits, cancellation, session continuation, paginated results, task listing and connection discovery.
+- **Two connection types.** Point at a Responses API, or at an OpenAI-compatible Chat Completions endpoint that the built-in gateway translates on the fly.
+- **Per-model control.** Set the context window, output cap and reasoning effort per model, and override the effort inherited from the CLI on every request.
+- **Credentials stay local.** The child process only ever sees a gateway token. API keys live in Windows DPAPI-encrypted storage or an environment variable, and are redacted from every surfaced error.
+- **Readable transcripts.** A local viewer merges native Codex rollout logs with the server's own history, folding empty terminal polls into one command card and offering full tool output on demand.
+- **Zero dependencies.** No `npm install`, no build step — plain ES modules on Node.js 24+.
+
+## Requirements
+
+- **Node.js 24** or newer.
+- **Codex CLI** with `codex exec --json` and `codex exec resume` support. Profile export targets Codex CLI 0.134.0+.
+- **A model endpoint** that supports function or custom tool calling. For agent work, tool calling is not optional.
+- **Windows 11** is the verified platform. Other systems can run the project, but the full flow is untested there; encrypted key storage requires Windows.
+
+## Quick start
 
 ```powershell
 git clone https://github.com/CandyRGB/codex-exo-subagent-mcp.git
 cd codex-exo-subagent-mcp
 
-# 启动本地服务并打开模型配置页面
+# Start the local workspace and open the model settings page
 node open-viewer.mjs --settings
 ```
 
-打开 [模型与连接](http://127.0.0.1:43187/#/settings/models)，点击顶栏“添加连接”，填写 API 根地址和认证方式。在统一模型列表中添加模型 ID、指定默认模型，然后保存并按需测试。连接行上的“设为默认连接”用于选择新任务使用的连接。
+In **Models & connections** (模型与连接), choose **Add connection**, enter an API base URL and authentication, add one or more model IDs, pick the default model, then save and test it. Mark the connection as default for new tasks.
 
-初始配置保留 `workbuddy` / `deepseek-v4.1-flash` 作为兼容入口。如果本机没有这个 Codex profile，直接在页面新增自己的连接并设为默认即可。
+The first launch seeds a `workbuddy` / `deepseek-v4.1-flash` profile connection so the page is never empty. If that profile does not exist on your machine, add your own connection and set it as default — the seed row can be ignored.
 
-随后在 **仓库目录** 中注册 MCP：
+Register the MCP server from the repository root:
 
 ```powershell
 $entry = Join-Path (Get-Location) 'server.mjs'
 codex mcp add codex-subagent -- node $entry
 ```
 
-重新连接 MCP 或重启 Codex，让客户端读取工具列表。之后修改默认连接会在新任务开始时读取；续聊继续使用原来的连接和模型。
+Reconnect the MCP server or restart Codex so the client reloads the tool list. Default-connection changes are picked up by the next task; resumed sessions stay on their original connection and model.
 
 > [!NOTE]
-> 不需要 `npm install`。运行数据默认写在仓库的 `state/` 中，该目录已被 Git 忽略。原生 Codex 会话日志仍由 Codex 管理。
+> There is no `npm install` step. Runtime data is written to `state/` next to the entry point and is git-ignored. Native Codex session logs remain under `CODEX_HOME`.
 
-## 配置模型
+## Model connections
 
-| 接入方式 | 地址示例 | 协议 |
+| Target | Base URL example | Protocol |
 | --- | --- | --- |
 | Ollama | `http://127.0.0.1:11434/v1` | Chat Completions |
 | LM Studio | `http://127.0.0.1:1234/v1` | Chat Completions |
 | vLLM | `http://127.0.0.1:8000/v1` | Chat Completions |
-| API 或代理路由 | 服务商提供的 API 根地址 | Responses 或 Chat Completions |
+| Hosted API or router | the provider's API root | Responses or Chat Completions |
 
-模型服务需要已在本机、局域网或远端运行，并支持所选 API。模型应支持函数/工具调用。其他原生协议（例如 Anthropic Messages）需要经过兼容网关。
+Responses requests are proxied upstream as SSE streams. Chat Completions requests are translated locally: message history, function and custom tools, namespace tools, streaming deltas, usage and `previous_response_id` continuation are all handled by the gateway. Native protocols such as Anthropic Messages need a compatible gateway in front of them.
 
-认证支持无需认证、环境变量，以及 Windows DPAPI 加密保存的 API Key。认证头默认为 `Authorization: Bearer ...`，也可改为 `X-API-Key` 等名称。非 Windows 环境请使用环境变量；其他平台的完整运行流程尚未验证。
+Authentication supports no auth, an environment variable, or a stored API key. The header defaults to `Authorization: Bearer …` and can be renamed (`X-API-Key`, for example). Keys saved in the editor are encrypted with DPAPI under the current Windows user in `state/config/credentials.json`; on other platforms, use an environment variable.
 
-点击“添加”打开模型弹窗，也可先获取模型列表，再从候选项添加。弹窗支持设置 API 模型的上下文窗口、最大输出 Token 数和思考参数。弹窗保存更新当前草稿，点击“保存连接”写入配置。API Key 旁的“检查”访问模型列表接口。“测试模型”使用当前草稿发送推理请求，“测试连接”使用已保存的配置，推理测试可能计入服务用量。
+Each model row accepts an optional context window and maximum output token count. The launcher passes the context window to Codex, and the gateway caps upstream `max_output_tokens` at the configured maximum.
 
-接入方式分为“模型 API 连接”和“已有 Codex profile”。API 地址、协议、认证和模型 ID 由用户手动填写；默认模型只在编辑区的统一模型列表中设置，连接行展示名称、协议、默认模型和状态，右侧提供“设为默认连接”和展开编辑操作。网页管理的 API 连接在每次启动子 CLI 时通过 `--model` / `-c` 传入参数，不自动写入用户的 Codex 配置。
+### Reasoning settings
 
-选择“已有 Codex profile”时，下拉框列出本机 Codex 配置目录里的 `<名称>.config.toml`。选中后可编辑 TOML 原文，点“保存文件”写回原文件。点“保存连接”会保存 profile 的引用和模型列表。若文件已被其他程序修改，页面会提示重新读取。模型是否可用需通过实际任务验证。
+The model dialog offers three schemes:
 
-### 思考参数
+- **Service default** — nothing is sent, so the upstream decides the effort.
+- **Service-declared** — levels are read from the provider's model list with **Read levels**.
+- **Custom** — you type any raw value the service accepts.
 
-模型弹窗提供“服务默认”“服务声明”和“自定义”三种思考档位方案。选择自定义后可填写服务支持的原始值。
+For API connections the gateway injects the setting on the actual request model and drops the effort inherited from the CLI, including when the configured value is intentionally blank. Raw values are never treated as Codex execution modes. Profile connections keep their own TOML configuration.
 
-“服务默认”让上游决定强度。选择“服务声明”后，可以在弹窗内点击“读取档位”获取当前模型的候选值。
+### Testing and export
 
-API 连接的思考参数统一由网关按实际请求的模型注入，覆盖 CLI 继承的强度；自定义值不会被当作 Codex 的执行模式。已有 profile 类型继续使用自己的配置。旧版连接的 `reasoning_effort` 会继续作为连接默认值。升级后重新连接一次 MCP，加载新的启动逻辑。
+**Check** calls `/models` with the current draft. **Test model** sends one inference request with the draft settings; **Test connection** uses the saved configuration. Both inference tests verify streaming completion and a real tool call, and may count toward provider usage.
 
-已保存的 API 连接可以在“更多”菜单中“导出为 profile”；“移除连接”也在该菜单中。弹窗提供配置预览、保存路径、下载文件和启动命令，供用户在终端手动使用 Codex CLI 0.134.0+。导出不自动安装或覆盖配置，不包含 API Key 或网关令牌。导出的 profile 仍通过本机网关访问原连接，启动命令会启动网关并从本地文件读取令牌；连接和网关需保留，地址、协议或认证方式变化后需要重新导出。手动启动的 CLI 会话不纳入本页面的 MCP 会话列表。
+Any saved API connection can be exported from the **More** menu as a Codex CLI profile. The dialog shows the generated `<name>.config.toml`, the target path and terminal launch commands. Nothing is installed or overwritten, no API key or gateway token is embedded, and the launch command starts the local gateway and reads its token from the state directory. Re-export after changing an endpoint, protocol or auth mode. Manually launched CLI sessions do not appear in the viewer.
 
-> [!IMPORTANT]
-> 网页只监听本机回环地址。API 连接任务通过同一个本机模型网关运行，因此任务执行时服务需要保持运行。关闭浏览器窗口不会停止服务。
+## The `codex_subagent` tool
 
-## 在 Codex 中使用
-
-例如告诉 Codex：
-
-> 使用配置好的子代理在后台检查这个项目，完成后报告修改文件和验证结果。
-
-MCP 提供一个工具 `codex_subagent`，通过 `action` 选择操作：
-
-| action | 用途 |
-| --- | --- |
-| `run` | 同步执行，默认操作 |
-| `start` | 后台启动并返回任务编号 |
-| `status` / `wait` | 查询进度或有限时间等待 |
-| `resume` | 在原会话中继续执行，产生新的任务编号 |
-| `cancel` | 终止对应任务的进程树 |
-| `result` / `list` | 分页读取结果或列出任务 |
-| `models` | 列出配置的连接和模型 ID，不包含密钥 |
-| `viewer` | 返回本地工作区地址 |
-
-省略 `connection_id` 和 `model` 时使用网页设置。也可以先调用 `models`，再明确选择连接和模型：
+| Action | Key inputs | Behavior |
+| --- | --- | --- |
+| `run` | `prompt` | Wait for the agent to finish. Default action. |
+| `start` | `prompt` | Start in the background and return a `job_id`. |
+| `status` | `job_id` | State, elapsed time, event and tool counts. No reply body. |
+| `wait` | `job_id`, `wait_sec` | Wait up to 30 seconds; a timeout does not cancel the task. |
+| `cancel` | `job_id` | Terminate the child process tree and report the real terminal state. |
+| `resume` | `job_id`, `prompt` | Continue the recorded Codex session; returns a new `job_id`. |
+| `result` | `job_id`, `offset` | Read a page of the saved final reply. |
+| `list` | `limit` | Recent tasks, newest first. |
+| `models` | `connection_id` | Configured connections and model IDs, never credentials. |
+| `viewer` | — | URL of the local workspace. |
 
 ```json
-{"action":"start","prompt":"检查项目并报告验证结果","cwd":"C:\\path\\to\\project","sandbox":"workspace-write"}
-{"action":"wait","job_id":"<任务编号>","wait_sec":25}
-{"action":"resume","job_id":"<任务编号>","prompt":"继续检查第二个输入"}
+{"action":"start","prompt":"Inspect the failing build and fix the cause. Run the relevant check and report the changed files.","cwd":"C:\\path\\to\\project","sandbox":"workspace-write"}
+{"action":"wait","job_id":"<job_id>","wait_sec":25}
+{"action":"resume","job_id":"<job_id>","prompt":"Now verify the fix against the second input."}
 ```
 
-主代理只接收任务状态和有限长度的结果。完整记录可从网页查看；子代理不会自动得到主聊天的全部上下文。
+Omit `connection_id` and `model` to use the website default, or read `models` first and choose explicitly.
 
-## 运行原理
+> [!IMPORTANT]
+> The child agent does not inherit the parent conversation. Write self-contained prompts with file paths, constraints and acceptance criteria. Use `resume` when the child needs its own earlier turns instead of copying a long transcript back through the main model. Concurrent turns on one Codex session are blocked.
+
+## How it works
 
 ```mermaid
 flowchart LR
-  A[Codex 主代理] -->|MCP| B[任务服务]
-  B --> C[独立 Codex CLI]
-  C --> D[本机模型网关]
-  D --> E[本地模型 / API / 路由]
-  B --> F[任务记录]
-  C --> G[Codex 会话日志]
-  F --> H[本地网页]
+  A["Codex main agent"] -->|MCP stdio| B["Job manager"]
+  B --> C["Independent Codex CLI"]
+  C --> D["Local model gateway"]
+  D --> E["Local model / API / router"]
+  B --> F["Job records"]
+  C --> G["Native Codex logs"]
+  F --> H["Local workspace"]
   G --> H
 ```
 
-任务服务和网页/网关服务是独立进程。正常断开 MCP 会中断该连接仍在运行的任务；网页服务可以继续查看已保存的记录。已有 Codex profile 类型的连接直接沿用其原路由。
+The MCP stdio server and the viewer/gateway are separate processes. The viewer is started on demand and survives MCP disconnects, so saved records stay readable; the gateway must be running while endpoint-backed tasks execute. Closing the browser window does not stop either service.
 
-会话顶部保留模型和状态，日期及轮次、工具次数集中在会话信息中。助手回复直接展示内容；侧栏保留品牌、主题与刷新操作，连接异常时显示提示。已有连接以类型标记展示，新建时选择接入方式。参数 JSON 和长说明按需展开，参数错误直接显示。
+A normal MCP disconnect stops the tasks owned by that connection and marks them `interrupted`, because tasks are owned by a live process rather than a daemon. Stale records whose owning PID is gone are marked interrupted when read. Resume any task whose `session_id` was recorded.
 
-## 测试
+## Local workspace
+
+Open `http://127.0.0.1:43187`, or run `node open-viewer.mjs` to launch it in your browser.
+
+Sessions are grouped by working directory under **Projects**, with a title-only recent list ordered by update time. A session view shows user instructions, agent replies, commands and tool output, and supports search, pinning, renaming the display title, loading earlier messages and JSON export. Consecutive commands collapse into a single group with per-command rows and edge-to-edge output; empty `write_stdin` polls from one terminal process fold into the original command card, while calls carrying real input stay separate. Tool output previews stop at 64,000 characters, with a full-output download and complete output inside exports.
+
+Only sessions registered by this server are listed — no imports, no discovery by provider. Native Codex rollout logs (JSONL and Zstandard) are the primary source, with the server's own `history.jsonl` as a fallback when a rollout is unavailable. System and developer context and encrypted reasoning records are omitted from the transcript. Renaming and pinning change display metadata only; native logs are untouched.
+
+The interface is Chinese-language and binds to loopback only. `CODEX_SUBAGENT_VIEWER_ENABLED=false` disables automatic startup for that MCP process, and `--no-open` prints the URL without launching a browser.
+
+## Tests
 
 ```powershell
 npm test
 ```
 
-48 项自动检查覆盖任务生命周期、会话范围、配置操作、密钥加密、profile 引用与导出、路由固定、网络错误提示、按模型思考参数、思考模式下的连接测试、认证与流式工具协议适配。
+50 checks run against a local fixture with no provider contact. They cover job lifecycle and termination, bounded results and pagination, usage reporting, persistence and resume, session locking, timeouts, concurrency, cancellation, disconnect cleanup, connection validation, encrypted credentials, profile editing and export, route fingerprinting, error message quality, per-model reasoning injection, and authentication plus streaming tool-call translation.
 
 ```powershell
-# 真实 Codex CLI + 本地确定性模型接口，验证文件写入、shell、续聊及导出 profile
+# Real Codex CLI against a deterministic local Chat Completions fixture:
+# real file write, shell command, session continuation and profile export
 npm run test:cli
 
-# 可选：调用实际配置的模型两轮，可能消耗该模型的额度
+# Optional: two turns against the configured provider, may consume quota
 npm run test:live
 ```
 
-浏览器外观自动验收尚未完成；接口、静态资源和前端绑定已经检查。
+## Configuration
 
-## 环境与存储
-
-常用环境变量：
-
-| 变量 | 默认值 / 用途 |
+| Variable | Default |
 | --- | --- |
-| `CODEX_SUBAGENT_STATE_DIR` | 入口旁的 `state` |
+| `CODEX_SUBAGENT_STATE_DIR` | `state` next to the entry point |
 | `CODEX_SUBAGENT_VIEWER_PORT` | `43187` |
-| `CODEX_SUBAGENT_MAX_CONCURRENT` | 每个 MCP 进程最多 `2` 个任务 |
-| `CODEX_SUBAGENT_MAX_OUTPUT_CHARS` | 每页结果 `4000` 个 UTF-16 字符 |
-| `CODEX_SUBAGENT_CODEX_BIN` | Windows 自动寻找桌面端 CLI，其他情况使用 PATH 中的 `codex` |
-| `CODEX_SUBAGENT_PROFILE` / `CODEX_SUBAGENT_MODEL` | 初始化兼容连接时使用的 profile / 模型 |
+| `CODEX_SUBAGENT_VIEWER_ENABLED` | `true`; set `false` to skip the viewer |
+| `CODEX_SUBAGENT_MAX_CONCURRENT` | `2` per MCP process, maximum 16 |
+| `CODEX_SUBAGENT_MAX_OUTPUT_CHARS` | `4000` UTF-16 characters per page, 256–16000 |
+| `CODEX_SUBAGENT_CODEX_BIN` | Newest installed desktop Codex build on Windows, otherwise `codex` on `PATH` |
+| `CODEX_SUBAGENT_PROFILE` | `workbuddy` |
+| `CODEX_SUBAGENT_MODEL` | `deepseek-v4.1-flash` |
+| `CODEX_SUBAGENT_MAX_DEPTH` | `2` |
+| `CODEX_HOME` | `~/.codex` |
 
-同一个端口只能对应一个状态目录。已有安装占用端口时，可以为新实例指定其他端口，或明确共享同一个状态目录；MCP 与网页需使用相同设置。
+Execution timeouts default to 900 seconds and accept 1–86,400. One port maps to one state directory: use a different port for a second instance, or share the state directory deliberately — the MCP server and the viewer must agree on both settings.
 
-`state/`、会话记录、模型配置、加密凭据、网关令牌及测试产物均不提交。更多参数、生命周期和限制见 [完整参考](docs/REFERENCE.md)。
+Model settings live in `state/config/models.json`. They are re-read for every new task, so switching the default connection does not require an MCP restart. Changing a connection's endpoint, protocol or auth mode invalidates its route fingerprint; start a new task or restore the original route rather than resuming.
+
+## Security and storage
+
+The workspace binds to `127.0.0.1`, validates the `Host` and `Origin` headers, sends a restrictive CSP, and compares the gateway bearer token in constant time. Sensitive routes additionally require a same-origin fetch. Upstream keys never reach the child CLI — it receives `SUBAGENT_GATEWAY_TOKEN` for the local gateway only — and error messages are scrubbed of bearer tokens, `sk-…` keys and secret values before display.
+
+`state/` holds job metadata, visible conversation and tool history, final replies, model configuration, encrypted credentials, the gateway token and viewer metadata. None of it is committed, and nothing is deleted automatically. The child runs with `mcp_servers.codex-subagent.enabled=false` so it cannot recursively start another bridge; prompts are delivered over stdin rather than the command line.
+
+See [docs/REFERENCE.md](docs/REFERENCE.md) for the complete action schema, gateway behavior, lifecycle rules and limitations.
