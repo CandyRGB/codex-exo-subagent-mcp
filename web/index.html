@@ -108,23 +108,27 @@
         <div class="settings-field"><label for="model-context-window">上下文窗口</label><input id="model-context-window" type="number" min="2048" max="4000000" placeholder="例如 128000"></div>
         <div class="settings-field"><label for="model-max-output">最大输出 Token 数</label><input id="model-max-output" type="number" min="1" max="4000000" placeholder="例如 4096"></div>
       </div>
-      <div class="settings-field"><label class="settings-checkbox"><input id="model-reasoning-override" type="checkbox">为此模型单独设置思考参数</label></div>
-      <fieldset id="model-reasoning-fields" class="reasoning-settings-fields" disabled>
+      <div class="connection-form-grid">
         <div class="settings-field">
-          <label for="model-reasoning">思考强度</label>
-          <input id="model-reasoning" list="model-effort-options" maxlength="64" autocomplete="off" placeholder="选择或填写服务支持的值">
-          <datalist id="model-effort-options"></datalist>
-          <p id="model-effort-hint"></p>
+          <label for="model-effort-set">思考档位方案</label>
+          <select id="model-effort-set">
+            <option value="inherit">继承连接设置</option>
+            <option value="provider">服务声明</option>
+            <option value="openai">OpenAI 档位</option>
+            <option value="deepseek">DeepSeek 档位</option>
+            <option value="custom">自定义</option>
+          </select>
         </div>
-        <details class="reasoning-extensions">
-          <summary>兼容扩展</summary>
-          <div class="settings-field"><label for="model-thinking-format">参数结构</label><select id="model-thinking-format"><option value="effort">接口标准强度（effort）</option><option value="thinking">thinking 对象</option><option value="reasoning">reasoning 对象</option></select></div>
-          <div class="connection-form-grid">
-            <div class="settings-field"><label for="model-thinking-mode">思考模式</label><input id="model-thinking-mode" list="model-thinking-modes" maxlength="64"><datalist id="model-thinking-modes"><option value="enabled"></option><option value="disabled"></option><option value="adaptive"></option><option value="between_tools"></option></datalist></div>
-            <div class="settings-field"><label for="model-thinking-budget">思考预算</label><input id="model-thinking-budget" type="number" min="0" max="4000000"></div>
-          </div>
-        </details>
-      </fieldset>
+        <div id="model-effort-field" class="settings-field" hidden>
+          <label for="model-reasoning">思考强度</label>
+          <select id="model-reasoning"><option value="">服务默认</option></select>
+        </div>
+        <div id="model-custom-effort-field" class="settings-field" hidden>
+          <label for="model-custom-effort">思考强度</label>
+          <input id="model-custom-effort" maxlength="64" autocomplete="off" placeholder="填写服务支持的值">
+        </div>
+      </div>
+      <p id="model-effort-hint" class="settings-form-note" hidden></p>
     </div>
     <p id="model-dialog-result" class="connection-test-result" role="status" hidden></p>
     <div class="dialog-actions">

@@ -1,9 +1,19 @@
 const fail = message => { throw Object.assign(new Error(message), { status: 400 }); };
 const rawValue = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/.test(value);
 
+export const reasoningEffortSets = {
+  openai: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+  deepseek: ['none', 'low', 'high', 'max'],
+};
+
 export function normalizeReasoning(input = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('思考设置必须是对象。');
   const settings = {};
+  const effortSet = input.effort_set;
+  if (effortSet !== undefined) {
+    if (typeof effortSet !== 'string' || (effortSet !== 'provider' && !Object.hasOwn(reasoningEffortSets, effortSet))) fail('思考档位方案无效。');
+    settings.effort_set = effortSet;
+  }
   const format = input.thinking_format || 'effort';
   if (!['effort', 'thinking', 'reasoning'].includes(format)) fail('思考参数结构无效。');
   if (format !== 'effort') settings.thinking_format = format;

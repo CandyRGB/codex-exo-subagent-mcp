@@ -14,9 +14,9 @@ Open `http://127.0.0.1:43187`. The page groups conversations by working director
 
 ## Model settings
 
-Configure reasoning in the model dialog using effort values supported by the service. A complete `model_reasoning[model_id]` object overrides any saved connection defaults. An empty override omits all reasoning controls for that model. Models without overrides inherit saved connection settings.
+Choose an effort scheme in the model dialog, then select a level or enter a custom value. The saved `effort_set` field restores the scheme in the editor. A `model_reasoning[model_id]` object overrides the connection defaults. Selecting the service default omits the effort field. Models without overrides inherit saved connection settings.
 
-The standard `effort` format sends `reasoning.effort` (Responses) or `reasoning_effort` (Chat); a `disabled` mode sends `none`. The optional `thinking` extension sends `thinking.type` and `thinking.budget_tokens`, with effort using the selected protocol's field. The optional `reasoning` extension sends `reasoning.enabled` and either `reasoning.effort` or `reasoning.max_tokens`. These extensions require explicit support from the upstream compatible service. There is no native Anthropic/Gemini transport. The UI shows parameter previews and field explanations on demand, keeps validation errors visible, and optionally shows effort metadata from model discovery without applying it automatically.
+The gateway sends the selected value as `reasoning.effort` (Responses) or `reasoning_effort` (Chat). The editor can use levels declared by model discovery. Existing configurations may contain `thinking` or `reasoning` extension fields. Editing the scheme or level replaces those fields with a standard effort setting.
 
 The gateway applies settings for each request's actual model and removes inherited CLI effort, including when the configured effort is blank. Raw effort values are not passed as CLI execution modes. Profile exports use the same gateway settings. Reconnect MCP once after upgrading to load the revised child startup logic.
 

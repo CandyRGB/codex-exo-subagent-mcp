@@ -62,17 +62,9 @@ codex mcp add codex-subagent -- node $entry
 
 ### 思考参数
 
-在模型弹窗中填写服务接受的思考强度，例如 `low`、`high` 或 `xhigh`。启用单模型设置后，留空的项目由服务决定默认行为。已有连接保存的默认值可由模型继承。
+在模型弹窗中先选思考档位方案，再选择强度。方案包括 OpenAI、DeepSeek 和服务声明的档位，也可以选择自定义并填写原始值。具体模型支持的档位以服务为准。
 
-每个模型的思考设置从统一模型列表中的模型行进入；未单独设置的模型沿用连接默认值。启用单模型设置后，该模型使用整组独立设置，空项目不会继承连接参数。“获取模型列表”若返回档位元数据，会提供输入建议，不会自动填入或修改设置。模型清单接口未提供元数据时仍可手动填写。
-
-| 参数结构 | 强度 | 开关／模式 | 思考预算 |
-| --- | --- | --- | --- |
-| 接口标准强度 | Responses 的 `reasoning.effort`，或 Chat 的 `reasoning_effort` | `disabled` 转为 `none`；`enabled` 需填写具体强度 | 没有通用预算字段 |
-| thinking 兼容扩展 | 同所选 Responses / Chat 协议 | `thinking.type`，如服务支持的 `adaptive` | `thinking.budget_tokens` |
-| reasoning 兼容扩展 | `reasoning.effort` | `reasoning.enabled` 布尔值 | `reasoning.max_tokens`，与强度二选一 |
-
-扩展结构仅供明确支持相应字段的兼容服务使用，不会把原生 Claude Messages 或 Gemini GenerateContent 自动转换为 Codex 协议。展开“查看请求参数”可预览实际发送的思考参数。服务最终校验档位及模式是否合法；互相冲突的本地设置会在保存时被拒绝。
+“继承连接设置”使用连接中已保存的默认值。“服务默认”让上游决定强度。选择“服务声明”前，可以先获取模型列表来读取档位信息。
 
 API 连接的思考参数统一由网关按实际请求的模型注入，覆盖 CLI 继承的强度；自定义值不会被当作 Codex 的执行模式。已有 profile 类型继续使用自己的配置。旧版连接的 `reasoning_effort` 会继续作为连接默认值。升级后重新连接一次 MCP，加载新的启动逻辑。
 

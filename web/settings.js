@@ -1,4 +1,4 @@
-import { normalizeReasoning } from './reasoning.js';
+import { normalizeReasoning, reasoningEffortSets } from './reasoning.js';
 import { ModelSelection } from './model-selection.js';
 import { createSelectMenus } from './dropdown.js';
 import { inferenceEndpoint, normalizeApiBaseUrl } from './api-endpoint.js';
@@ -114,8 +114,6 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
           context ? `上下文 ${context.toLocaleString()}` : '上下文 自动',
           limits.max_output_tokens ? `输出 ${limits.max_output_tokens.toLocaleString()}` : '输出 自动',
           effort ? `思考 ${effort}` : '',
-          thinking.thinking_mode ? `模式 ${thinking.thinking_mode}` : '',
-          thinking.thinking_budget !== undefined && thinking.thinking_budget !== '' ? `预算 ${thinking.thinking_budget}` : '',
         ].filter(Boolean);
         name.append(el('span', 'model-parameters', parameters.join(' · ')));
       } else {
@@ -150,30 +148,23 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     if (!modelsOf().length && !candidates.length) { const row = el('tr'); const cell = el('td', 'empty-models', '添加模型或获取模型列表。'); cell.colSpan = 3; row.append(cell); rows.append(row); }
     $('model-rows').replaceChildren(rows);
   }
+  function selectedEffort() {
+    return $('model-effort-set').value === 'custom'
+      ? $('model-custom-effort').value.trim()
+      : $('model-reasoning').value;
+  }
   function readModelReasoning() {
-    return {
-      reasoning_effort: $('model-reasoning').value.trim(),
-      thinking_format: $('model-thinking-format').value,
-      thinking_mode: $('model-thinking-mode').value.trim(),
-      thinking_budget: $('model-thinking-budget').value,
-    };
-  }
-  function fillModelReasoning(settings) {
-    $('model-reasoning').value = settings.reasoning_effort || '';
-    $('model-thinking-format').value = settings.thinking_format || 'effort';
-    $('model-thinking-mode').value = settings.thinking_mode || '';
-    $('model-thinking-budget').value = settings.thinking_budget ?? '';
-  }
-  function fillEfforts(list, model, examples = []) {
-    const capability = Object.hasOwn(discoveredCapabilities, model) ? discoveredCapabilities[model] : null;
-    const options = capability?.efforts?.length ? capability.efforts : examples;
-    list.replaceChildren();
-    for (const effort of options) {
-      const option = el('option');
-      option.value = effort;
-      list.append(option);
+    const set = $('model-effort-set').value;
+    if (set === 'inherit') return null;
+    const effort = selectedEffort();
+    const previous = selection.overrides[editingModel];
+    if (previous && (previous.effort_set || 'custom') === set && (previous.reasoning_effort || '') === effort) {
+      return previous;
     }
-    return capability;
+    return normalizeReasoning({
+      reasoning_effort: effort,
+      ...(set === 'custom' ? {} : { effort_set: set }),
+    });
   }
   function modelResult(message = '', ok = true) {
     const target = $('model-dialog-result');
@@ -181,12 +172,28 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     target.textContent = message;
     target.className = `connection-test-result ${ok ? 'success' : 'error'}`;
   }
-  function syncModelReasoning() {
-    $('model-reasoning-fields').disabled = !$('model-reasoning-override').checked;
-    const capability = fillEfforts($('model-effort-options'), $('model-id-input').value.trim(), ['low', 'medium', 'high', 'xhigh', 'max', 'none']);
-    $('model-effort-hint').textContent = capability?.efforts?.length
-      ? `服务支持 ${capability.efforts.join(' / ')}，也可手填。`
-      : '候选值仅作示例，请按服务支持的档位填写。';
+  function syncModelEffort(value) {
+    const scheme = $('model-effort-set');
+    const set = scheme.value;
+    const model = $('model-id-input').value.trim();
+    const reported = Object.hasOwn(discoveredCapabilities, model) ? discoveredCapabilities[model].efforts || [] : [];
+    scheme.querySelector('option[value="provider"]').disabled = !reported.length && set !== 'provider';
+    const levels = set === 'provider' ? reported : reasoningEffortSets[set] || [];
+    const effortSelect = $('model-reasoning');
+    effortSelect.replaceChildren();
+    for (const effort of new Set(['', ...levels, value])) {
+      const option = el('option', '', effort || '服务默认');
+      option.value = effort;
+      effortSelect.append(option);
+    }
+    effortSelect.value = value;
+    $('model-custom-effort').value = set === 'custom' ? value : '';
+    $('model-effort-field').hidden = set === 'inherit' || set === 'custom';
+    $('model-custom-effort-field').hidden = set !== 'custom';
+    const hint = $('model-effort-hint');
+    hint.textContent = set === 'provider' && !reported.length ? '获取模型列表后可更新服务声明的档位。'
+      : Object.hasOwn(reasoningEffortSets, set) ? '可用档位取决于具体模型。' : '';
+    hint.hidden = !hint.textContent;
     selects.refresh();
   }
   function openModelDialog(model = '', editing = false) {
@@ -204,9 +211,8 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
     $('model-parameter-fields').hidden = profile;
     for (const field of $('model-parameter-fields').querySelectorAll('input, select')) field.disabled = profile;
     $('test-model-draft').hidden = profile;
-    $('model-reasoning-override').checked = Boolean(thinking);
-    fillModelReasoning(thinking || {});
-    syncModelReasoning();
+    $('model-effort-set').value = thinking ? thinking.effort_set || 'custom' : 'inherit';
+    syncModelEffort(thinking?.reasoning_effort || '');
     modelResult();
     modelDialog.showModal();
     $('model-id-input').focus();
@@ -224,7 +230,7 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
         limits[field] = value;
       }
     }
-    const thinking = !profile && $('model-reasoning-override').checked ? normalizeReasoning(readModelReasoning()) : null;
+    const thinking = profile ? null : readModelReasoning();
     const candidate = new ModelSelection(selection.snapshot());
     candidate.update(editingModel, model, limits, thinking);
     return { model, candidate };
@@ -506,8 +512,8 @@ export function createModelSettings({ toast, onSaved = () => {} }) {
   modelDialog.addEventListener('close', () => {
     if (!modelDialog.open) closeModelDialog();
   });
-  $('model-reasoning-override').addEventListener('change', syncModelReasoning);
-  $('model-id-input').addEventListener('input', syncModelReasoning);
+  $('model-effort-set').addEventListener('change', () => syncModelEffort(''));
+  $('model-id-input').addEventListener('input', () => syncModelEffort(selectedEffort()));
   $('test-model-draft').addEventListener('click', testModelDraft);
   $('model-dialog-form').addEventListener('submit', event => {
     event.preventDefault();
